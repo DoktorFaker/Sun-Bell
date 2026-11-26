@@ -30,6 +30,18 @@ CFG = {
         wheels=[(597, 420, 101), (1305, 420, 101)],
         hollow=dict(rect=(1032, 1000, 1418, 1322), floor=1.18),   # the bed: top-view px rect, floor height (m)
     ),
+    'ak': dict(
+        L=0.88, zmin=-0.44, W=0.075, voxel=0.0035,
+        views={
+            'left':   dict(box=(68, 222, 1295, 586), front_right=True),
+            'right':  dict(box=(1310, 222, 2548, 586), front_right=False),
+            'top':    dict(box=(72, 775, 1548, 918), flip=True),
+            'bottom': dict(box=(72, 1118, 1548, 1302), flip=True),
+            'front':  dict(box=(1730, 790, 1955, 1298)),
+            'rear':   dict(box=(2235, 790, 2405, 1298)),
+        },
+        carve=['left', 'front'],
+    ),
     'heli': dict(
         L=10.6, zmin=-7.3, W=2.6, voxel=0.05,
         views={
@@ -92,6 +104,7 @@ def main(name, sheet, out):
         box = (x0 + PAD, y0 + PAD, x1 + PAD, y1 + PAD)
         crop = img[box[1]:box[3], box[0]:box[2]].copy()
         mask = np.ones(crop.shape[:2], np.uint8) if v.get('raw') else view_mask(img, box, bg)
+        if v.get('flip'): crop, mask = crop[:, ::-1].copy(), mask[:, ::-1].copy()
         V[k] = dict(crop=crop, mask=mask, **v)
 
     L, zmin, W, vs = C['L'], C['zmin'], C['W'], C['voxel']

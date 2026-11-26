@@ -45,7 +45,24 @@ function buildModel() {
     wheels.push({ group: w, spin, front: z > 0 });
   }
   const { logs, stones } = addCargo(g, add, { floor: 1.08, z0: -2.85, z1: -0.05, x0: -0.9, x1: 0.9 });
-  return { group: g, wheels, logs, stones, lamp, paint, wheelPos: [[-1.05, 2.1], [1.05, 2.1], [-1.05, -1.6], [1.05, -1.6]], wheelR: 0.48 };
+  const turret = addTurret(g, add, 1.08, -1.0);
+  return { group: g, wheels, logs, stones, lamp, paint, turret, wheelPos: [[-1.05, 2.1], [1.05, 2.1], [-1.05, -1.6], [1.05, -1.6]], wheelR: 0.48, halfW: 1.1, halfL: 3.1 };
+}
+
+/** A mounted machine gun in the bed, just behind the cab. */
+function addTurret(g, add, floor, z) {
+  const dark = new THREE.MeshStandardMaterial({ color: 0x25282b, roughness: 0.45, metalness: 0.75 });
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.6, metalness: 0.3 });
+  add(new THREE.CylinderGeometry(0.09, 0.14, 0.75, 10), dark, 0, floor + 0.37, z);
+  const yaw = new THREE.Group(); yaw.position.set(0, floor + 0.8, z); g.add(yaw);
+  const pitch = new THREE.Group(); yaw.add(pitch);
+  add(new THREE.BoxGeometry(0.16, 0.18, 0.62), dark, 0, 0, 0.12, pitch);
+  add(new THREE.CylinderGeometry(0.03, 0.035, 0.8, 8).rotateX(Math.PI / 2), dark, 0, 0.02, 0.8, pitch);
+  add(new THREE.CylinderGeometry(0.05, 0.05, 0.14, 8).rotateX(Math.PI / 2), dark, 0, 0.02, 1.16, pitch);
+  add(new THREE.BoxGeometry(0.7, 0.42, 0.04), olive, 0, 0.12, 0.42, pitch);          // gun shield
+  add(new THREE.BoxGeometry(0.12, 0.1, 0.2), olive, 0.15, -0.02, 0.05, pitch);        // ammo box
+  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.02, 1.25); pitch.add(muzzle);
+  return { yaw, pitch, muzzle };
 }
 
 /** Logs and stones shown in the bed. */
@@ -114,7 +131,8 @@ function buildBlueprintModel(g, bp, add, chrome, lamp) {
     }
   }
   const { logs, stones } = addCargo(g, add, meta.bed);
-  return { group: g, wheels, logs, stones, lamp, paint, wheelPos, wheelR: meta.wheels[0].r, tinted: true };
+  const turret = addTurret(g, add, meta.bed.floor, meta.bed.z1 - 0.55);
+  return { group: g, wheels, logs, stones, lamp, paint, turret, wheelPos, wheelR: meta.wheels[0].r, tinted: true, halfW: meta.W / 2 - 0.05, halfL: meta.L / 2 };
 }
 
 /** A beaten-up truck: repair it, drive it, haul supplies, and flatten anything in the way. */
@@ -137,13 +155,38 @@ export class Truck {
     this.lastSafe = this.pos.clone();
     this.wheelSpin = 0;
     this.m.paint.color.set(this.m.tinted ? 0x8f8a80 : 0x6b4a3a);   // dusty until repaired
+    this.hp = 100; this.maxHP = 100;
+    this.smoke = null;      // set by the game
+    this.fireT = 0;
     this.place();
+  }
+
+  /** Dents and smoke; at zero it stalls and needs repairing again. */
+  damage(n, events) {
+    if (this.broken) return;
+    this.hp = Math.max(0, this.hp - n);
+    if (this.hp <= 0) {
+      this.broken = true; this.speed *= 0.3;
+      this.m.paint.color.set(this.m.tinted ? 0x6c675e : 0x4a3428);
+      events.push({ type: 'truck-wrecked' });
+    }
+  }
+
+  /** Swing the turret towards a world point. */
+  aimTurret(point, dt) {
+    const t = this.m.turret;
+    const local = t.yaw.parent.worldToLocal(point.clone()).sub(t.yaw.position);
+    const yaw = Math.atan2(local.x, local.z);
+    const pitch = -Math.atan2(local.y, Math.hypot(local.x, local.z));
+    const d = ((yaw - t.yaw.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    t.yaw.rotation.y += d * (1 - Math.exp(-14 * dt));
+    t.pitch.rotation.x += (THREE.MathUtils.clamp(pitch, -0.9, 0.35) - t.pitch.rotation.x) * (1 - Math.exp(-14 * dt));
   }
 
   get cargoTotal() { return this.cargo.wood + this.cargo.stone; }
 
   repair() {
-    this.broken = false;
+    this.broken = false; this.hp = this.maxHP;
     this.m.paint.color.set(this.m.tinted ? 0xffffff : 0x8a3b22);
   }
 
@@ -183,7 +226,7 @@ export class Truck {
         if (hit && hit.face && Math.abs(hit.face.normal.y) < 0.6) { blocked = true; break; }
       }
       if (blocked) {
-        if (Math.abs(this.speed) > 8) { events.push({ type: 'truck-crash' }); }
+        if (Math.abs(this.speed) > 8) { events.push({ type: 'truck-crash' }); this.damage((Math.abs(this.speed) - 6) * 1.6, events); }
         this.speed *= -0.25;
       } else {
         const nx = this.pos.x + fwd.x * step, nz = this.pos.z + fwd.z * step;
@@ -192,6 +235,22 @@ export class Truck {
           if (Math.abs(this.speed) > 3) events.push({ type: 'truck-water' });
           this.speed = 0;
         } else { this.pos.x = nx; this.pos.z = nz; }
+      }
+    }
+    // sides and corners: nudge out of trees, rocks and walls instead of sliding into them
+    {
+      const s0 = Math.sin(this.yaw), c0 = Math.cos(this.yaw), hw = this.m.halfW + 0.1;
+      const side = new THREE.Vector3(c0, 0, -s0);
+      for (const lz of [-this.m.halfL * 0.75, 0, this.m.halfL * 0.75]) {
+        for (const sg of [-1, 1]) {
+          const o = new THREE.Vector3(this.pos.x + s0 * lz, this.pos.y + 0.9, this.pos.z + c0 * lz);
+          const d = side.clone().multiplyScalar(sg);
+          const hit = rayHit(collider, o, d, hw);
+          if (hit && hit.face && Math.abs(hit.face.normal.y) < 0.6) {
+            this.pos.addScaledVector(d, -(hw - hit.distance));
+            if (Math.abs(this.speed) > 7) { this.speed *= 0.6; this.damage(2, events); events.push({ type: 'truck-bump' }); }
+          }
+        }
       }
     }
     if (pushOut) {
@@ -226,6 +285,12 @@ export class Truck {
       if (w.front) w.group.rotation.y = -this.steer * 0.5;
     }
     this.m.lamp.emissiveIntensity = driving ? 6 : 0;
+    // damaged: smoke from under the hood
+    if (this.smoke && this.hp < 60 && Math.random() < dt * (this.hp < 25 ? 14 : 6)) {
+      const hood = new THREE.Vector3(0, 1.5, this.m.halfL * 0.65);
+      this.m.group.localToWorld(hood);
+      this.smoke.puff(hood, 1, this.hp < 25 ? 0.08 : 0.3, 0.3, 1.4, 2.4);
+    }
     if (driving && Math.abs(this.speed) > 6 && Math.random() < dt * 25) {
       events.push({ type: 'sparks', pos: this.pos.clone().addScaledVector(fwd, -2.6).setY(this.pos.y + 0.2), n: 2, color: [0.5, 0.4, 0.28], speed: 2 });
     }
@@ -249,6 +314,7 @@ export class Truck {
       e.takeHit(spd > 12 ? 4 : 2, this.pos, events);
       events.push({ type: 'truck-hit', enemy: e });
       this.speed *= 0.8;
+      this.damage(0.8, events);
     }
   }
 }

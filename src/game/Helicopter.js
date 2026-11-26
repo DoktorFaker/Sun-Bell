@@ -91,7 +91,20 @@ function buildModel() {
   const red = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 0.3, 0.2) }));
   red.position.set(-0.9, 2.15, -6.1); if (bp) red.position.set(-1.25, 1.45, -5.0); g.add(red);
   const grn = red.clone(); grn.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 8, 0.6) }); grn.position.x = -red.position.x; g.add(grn);
-  return { group: g, rotor, tail, disc, gun, muzzle, flash, mast };
+  // rocket pods on stub pylons
+  const podMat = new THREE.MeshStandardMaterial({ color: 0x3f4632, roughness: 0.55, metalness: 0.45 });
+  const pods = [];
+  for (const sx of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.7, 0.06, 0.35), podMat, sx * 0.95, 1.0, 0.55);
+    const pod = add(new THREE.CylinderGeometry(0.2, 0.2, 1.1, 12).rotateX(Math.PI / 2), podMat, sx * 1.32, 0.92, 0.6);
+    for (let k = 0; k < 7; k++) {
+      const a = k / 6 * Math.PI * 2, r = k === 6 ? 0 : 0.11;
+      add(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 6).rotateX(Math.PI / 2), dark, sx * 1.32 + Math.cos(a) * r, 0.92 + Math.sin(a) * r, 1.16);
+    }
+    const out = new THREE.Object3D(); out.position.set(sx * 1.32, 0.92, 1.25); g.add(out);
+    pods.push(out);
+  }
+  return { group: g, rotor, tail, disc, gun, muzzle, flash, mast, pods };
 }
 
 /** A flyable helicopter with a nose gun that only works when flying low. */
@@ -127,7 +140,31 @@ export class Helicopter {
       scene.add(mesh);
       this.bullets.push({ mesh, pos: new THREE.Vector3(), dir: new THREE.Vector3(), life: 0 });
     }
+    this.hp = 100; this.maxHP = 100;
+    this.rockets = 16; this.rocketT = 0; this.rocketRefill = 0; this.podSide = 0;
+    this.smoke = null; this.rocketSys = null;   // set by the game
     this.place();
+  }
+
+  get disabled() { return this.hp <= 0; }
+  damage(n, events) {
+    if (this.hp <= 0) return;
+    this.hp = Math.max(0, this.hp - n);
+    events.push({ type: 'heli-damage' });
+    if (this.hp <= 0) events.push({ type: 'heli-wrecked' });
+  }
+  repair() { this.hp = this.maxHP; }
+
+  /** Pair of rockets from the pods towards the aim point. */
+  fireRocket(events) {
+    if (!this.rocketSys || this.rocketT > 0 || this.rockets <= 0 || this.spool < 0.85) return false;
+    const pod = this.m.pods[this.podSide = 1 - this.podSide];
+    const from = new THREE.Vector3(); pod.getWorldPosition(from);
+    const dir = this.aimPoint.clone().sub(from).normalize();
+    this.rocketSys.launch(from, dir, 80);
+    this.rockets--; this.rocketT = 0.35;
+    events.push({ type: 'rocket-launch', pos: from });
+    return true;
   }
 
   get gunsReady() { return this.piloted && this.spool > 0.85 && this.agl <= GUN_ALTITUDE; }
@@ -148,8 +185,10 @@ export class Helicopter {
    * @param ctl { moveX, moveY, up, down, fire, lookYaw } (lookYaw = camera yaw the nose follows)
    */
   update(dt, ctl, collider, enemies, events) {
-    const piloted = this.piloted;
+    const piloted = this.piloted && !this.disabled;
     this.spool = clamp(this.spool + (piloted ? dt / 2.2 : -dt / 4), 0, 1);
+    this.rocketT -= dt;
+    if (this.rockets < 16 && (this.rocketRefill += dt) > 1.6) { this.rocketRefill = 0; this.rockets++; }
     const ground = this.groundAt(collider, this.pos.x, this.pos.z, this.pos.y + 1.5);
     this.agl = this.pos.y - ground;
 
@@ -177,19 +216,26 @@ export class Helicopter {
     const hs = hv.length();
     if (hs > 0.1) {
       const dir = hv.clone().divideScalar(hs);
-      for (const y of [0.6, 1.8, 3.4]) {
-        const hit = rayHit(collider, new THREE.Vector3(this.pos.x, this.pos.y + y, this.pos.z), dir, 3 + hs * dt);
+      const fx0 = Math.sin(this.yaw), fz0 = Math.cos(this.yaw);
+      // probe from the nose, the cabin, the tail and the rotor tips
+      const probes = [[0, 0.6, 0], [0, 1.8, 0], [0, 3.0, 0], [0, 1.5, 2.6], [0, 2.0, -6.0], [0, 2.8, 5.0], [0, 2.8, -5.0]];
+      for (const [, y, lz] of probes) {
+        const o = new THREE.Vector3(this.pos.x + fx0 * lz, this.pos.y + y, this.pos.z + fz0 * lz);
+        const hit = rayHit(collider, o, dir, 2.2 + hs * dt);
         if (hit && hit.face && Math.abs(hit.face.normal.y) < 0.7) {
           const n = hit.face.normal.clone().setY(0).normalize();
           const into = this.vel.x * n.x + this.vel.z * n.z;
-          if (into < 0) { this.vel.x -= n.x * into * 1.2; this.vel.z -= n.z * into * 1.2; }
+          if (into < 0) {
+            if (into < -7) { this.damage((-into - 5) * 1.5, events); events.push({ type: 'truck-bump' }); }
+            this.vel.x -= n.x * into * 1.3; this.vel.z -= n.z * into * 1.3;
+          }
         }
       }
     }
     this.pos.addScaledVector(this.vel, dt);
     // ground & ceiling
     const g2 = this.groundAt(collider, this.pos.x, this.pos.z, this.pos.y + 1.5);
-    if (this.pos.y < g2) { this.pos.y = g2; if (this.vel.y < 0) this.vel.y = 0; this.vel.x *= Math.exp(-6 * dt); this.vel.z *= Math.exp(-6 * dt); }
+    if (this.pos.y < g2) { this.pos.y = g2; if (this.vel.y < -7) { this.damage((-this.vel.y - 6) * 4, events); events.push({ type: 'truck-crash' }); } if (this.vel.y < 0) this.vel.y = 0; this.vel.x *= Math.exp(-6 * dt); this.vel.z *= Math.exp(-6 * dt); }
     const ceiling = g2 + 110;
     if (this.pos.y > ceiling) { this.pos.y = ceiling; this.vel.y = Math.min(this.vel.y, 0); }
     this.pos.x = clamp(this.pos.x, -290, 290);
@@ -210,6 +256,11 @@ export class Helicopter {
     this.m.tail.rotation.x = this.rotorAngle * 1.6;
     this.m.disc.material.opacity = Math.max(0, this.spool - 0.5) * 0.35;
 
+    // damaged: the engine smokes
+    if (this.smoke && this.hp < 60 && Math.random() < dt * (this.hp < 25 ? 16 : 7)) {
+      const eng = new THREE.Vector3(0, 2.6, -1.4); this.m.group.localToWorld(eng);
+      this.smoke.puff(eng, 1, this.hp < 25 ? 0.07 : 0.3, 0.4, 1.6, 2.6);
+    }
     // downwash dust when low
     if (this.spool > 0.6 && this.agl < 10 && Math.random() < dt * 30) {
       const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4;

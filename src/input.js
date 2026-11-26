@@ -22,7 +22,7 @@ export class Input {
       this.keys.add(e.code);
       this.lastDevice = 'kbm';
       const map = {
-        Space: 'roll', KeyQ: 'lock', KeyE: 'interact', KeyX: 'exitVehicle', KeyB: 'build', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5', KeyR: 'heal', Tab: 'switch',
+        Space: 'roll', KeyQ: 'lock', KeyE: 'interact', KeyX: 'exitVehicle', KeyB: 'build', KeyG: 'weapon', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5', KeyR: 'heal', Tab: 'switch',
         Escape: 'pause', KeyP: 'pause', F3: 'fps', KeyF: 'attack',
       };
       if (map[e.code]) { this.pressed.add(map[e.code]); }
@@ -110,6 +110,7 @@ export class Input {
       if (down(0)) out.pressed.add('interact');
       if (down(3)) out.pressed.add('exitVehicle');
       if (down(8)) out.pressed.add('build');
+      if (down(12)) out.pressed.add('weapon');
       if (b[5] || b[7]) out.fire = true;
       if (b[0]) out.up = true;
       if (b[4] || b[6]) out.down = true;

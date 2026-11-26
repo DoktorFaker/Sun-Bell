@@ -76,8 +76,8 @@ export class CameraRig {
     cam.rotateX(Math.sin(t * 41 + 1) * 0.015 * s);
     cam.rotateY(Math.sin(t * 29 + 2) * 0.015 * s);
 
-    const wantFov = hero.sprinting ? 60 : 55;
-    this.fov = damp(this.fov, wantFov, 4, dt);
+    const wantFov = this.zoomFov || (hero.sprinting ? 60 : 55);
+    this.fov = damp(this.fov, wantFov, this.zoomFov ? 12 : 4, dt);
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
   }
 

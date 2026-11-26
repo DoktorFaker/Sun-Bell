@@ -349,9 +349,13 @@ export class Zombie {
     away.normalize();
     this.vel.addScaledVector(away, 2 + dmg);
     GORE.spray(this.lockPoint, new THREE.Vector3(away.x, 0.3, away.z), 14, 3.5);
-    // chop something off
-    const chance = dmg >= 1.8 ? 1 : 0.62;
-    if (Math.random() < chance) {
+    // chop something off: a shot takes the piece it hit, a blade or blast picks one
+    const chance = opts.sever ?? (dmg >= 1.8 ? 1 : 0.62);
+    if (opts.part && LIMB_CHAIN[opts.part]) {
+      if (Math.random() < chance) this.sever(opts.part, away, events, opts.part === 'head' ? 1.3 : 1);
+    } else if (opts.part === 'torso') {
+      /* body shot: no limb comes off */
+    } else if (Math.random() < chance) {
       const w = [];
       const add = (n, k) => { if (this.attached.has(n)) w.push([n, k]); };
       add('farmR', 3); add('farmL', 3); add('uarmR', 1.6); add('uarmL', 1.6);

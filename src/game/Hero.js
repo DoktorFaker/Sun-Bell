@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeGunMesh } from './Weapons.js';
 import { buildHumanModel } from './HumanModel.js';
 import { AVATAR, AvatarRig } from './Avatar.js';
 import { resolveCapsule, probeDown, extraGround } from './physics.js';
@@ -54,6 +55,18 @@ export class Hero {
     this.healT = 0;
     this.pose = { ...IDLE_R, lx: -0.4, ly: 0.2, lz: -0.3, le: -1.2, shield: 0, crouch: 0, roll: 0, lean: 0, legAmt: 0 };
     this.tmp = new THREE.Vector3();
+    // guns picked up along the way (null = sword and shield)
+    this.guns = new Set(); this.gun = null; this.aiming = false; this.aimPitch = 0; this.recoil = 0;
+    this.gunPivot = new THREE.Group(); this.gunPivot.position.set(-0.1, 1.2, 0.2);
+    this.object.add(this.gunPivot);
+    this.gunMeshes = {};
+  }
+
+  /** Show the right weapon in the hands. */
+  equip(kind) {
+    this.gun = kind;
+    for (const k in this.gunMeshes) this.gunMeshes[k].visible = k === kind;
+    if (kind && !this.gunMeshes[kind]) { const m = makeGunMesh(kind); this.gunMeshes[kind] = m; this.gunPivot.add(m); }
   }
 
   get alive() { return this.state !== 'dead'; }
@@ -103,15 +116,19 @@ export class Hero {
     switch (this.state) {
       case 'move': {
         if (p.has('roll') && this.stamina > 0 && this.onGround) { this.startRoll(wishLen > 0.1 ? wish : null); break; }
-        if (p.has('attack') && this.stamina > 0) { this.startAttack(0, target); break; }
+        if (p.has('attack') && this.stamina > 0 && !this.gun) { this.startAttack(0, target); break; }
         if (p.has('heal') && this.flasks > 0 && this.hp < this.maxHP) { this.state = 'heal'; this.stateT = 0; this.flasks--; events.push({ type: 'heal-start' }); break; }
-        this.blocking = input.block && this.stamina > 0;
+        this.blocking = input.block && this.stamina > 0 && !this.gun;
+        this.aiming = !!this.gun && input.block;
         const sprint = input.sprint && !this.blocking && wishLen > 0.5 && this.stamina > 1 && !target;
         let spd = this.blocking ? 2.4 : sprint ? 8.2 : 5.0;
         if (target && !this.blocking) spd = 4.3;
+        if (this.gun) spd = this.aiming ? 2.6 : sprint && !this.aiming ? 7.4 : 4.4;
         if (sprint) this.useStamina(16 * dt);
         hSpeed = spd * wishLen;
-        if (target) {
+        if (this.gun && !(sprint && !this.aiming)) {
+          faceYaw = camYaw;            // rifle up: face where the camera looks, strafe
+        } else if (target) {
           faceYaw = Math.atan2(target.pos.x - this.pos.x, target.pos.z - this.pos.z);
         } else if (this.blocking) {
           faceYaw = camYaw;
@@ -410,6 +427,19 @@ export class Hero {
       Bn['fing1' + k2].rotation.set(0, 0, -side * curl);
       Bn['fing2' + k2].rotation.set(0, 0, -side * curl * 0.9);
       Bn['thumb' + k2].rotation.set(0.6, 0, -side * 0.5);
+    }
+    // rifle held up to the shoulder
+    m.sword.visible = !this.gun; m.shield.visible = !this.gun;
+    this.gunPivot.visible = !!this.gun && ['move', 'heal', 'hurt'].includes(this.state);
+    if (this.gun && this.gunPivot.visible) {
+      this.recoil = Math.max(0, this.recoil - dt * 6);
+      const lower = (this.sprinting && !this.aiming) ? 0.7 : 0;
+      this.gunPivot.rotation.set(-this.aimPitch * (1 - lower) + lower * 0.6 - this.recoil * 0.25, lower * 0.5, 0);
+      this.gunPivot.position.set(-0.1 + lower * 0.05, 1.2 - lower * 0.12, 0.2 - this.recoil * 0.06);
+      const ap = -this.aimPitch * (1 - lower);
+      R.u.rotation.set(-1.05 + ap * 0.8 + lower * 0.5, 0.35, -0.05, 'YXZ'); R.f.rotation.set(-1.1, 0, 0);
+      L.u.rotation.set(-1.35 + ap * 0.9 + lower * 0.4, -0.55, 0.1, 'YXZ'); L.f.rotation.set(-0.35, 0, 0);
+      spine.rotation.y += 0.12; chest.rotation.y += 0.1;
     }
     m.sword.rotation.x = P.sw;
     m.shield.rotation.set(P.shield * Math.PI / 2, (1 - P.shield) * Math.PI / 2, 0);

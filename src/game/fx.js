@@ -155,6 +155,9 @@ export class Sfx {
       this._tone(female ? 120 : 70, 1.1, 0.12 * volume, 'sawtooth', female ? 90 : 50);
     } catch (e) { /* no voices on this device */ }
   }
+  rifle() { this._noise(0.35, 'lowpass', 2600, 0.7, 1.0, 120); this._tone(70, 0.3, 0.5, 'sine', 35); this._noise(0.9, 'bandpass', 500, 0.8, 0.25, 150); }
+  whoosh() { this._noise(0.8, 'bandpass', 900, 0.9, 0.45, 2200); this._tone(160, 0.5, 0.12, 'sawtooth', 90); }
+  reload() { [0, 380, 900].forEach((d, i) => setTimeout(() => { this._tone(i === 2 ? 900 : 1400, 0.06, 0.12, 'square', 600); this._noise(0.06, 'highpass', 3000, 0.7, 0.3); }, d)); }
   hit() { this._noise(0.18, 'lowpass', 1800, 0.7, 0.8, 200); this._tone(110, 0.2, 0.5, 'triangle', 50); }
   block() { this._tone(1250, 0.4, 0.18, 'square', 900); this._tone(1870, 0.3, 0.12, 'sine'); this._noise(0.12, 'highpass', 3000, 0.7, 0.4); }
   hurt() { this._noise(0.25, 'lowpass', 700, 1, 0.9, 120); this._tone(90, 0.25, 0.4, 'sawtooth', 50); }

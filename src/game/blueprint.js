@@ -27,7 +27,7 @@ async function loadOne(name) {
 }
 
 export async function loadBlueprints() {
-  await Promise.all(['truck', 'heli'].map((n) => loadOne(n).catch((e) => console.warn(`blueprint ${n}:`, e))));
+  await Promise.all(['truck', 'heli', 'ak'].map((n) => loadOne(n).catch((e) => console.warn(`blueprint ${n}:`, e))));
 }
 
 /** Texture region of the atlas as a cloned texture (for wheels, tyres, blades). */

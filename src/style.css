@@ -162,3 +162,16 @@ body.touch #title .inner, body.touch #pause .inner { max-height: 100dvh; overflo
 body.touch #res, body.touch #raid { font-size: 12px; }
 body.touch #buildbar .slot { pointer-events: auto; }
 body.touch #buildbar { pointer-events: auto; z-index: 25; }
+
+.b-gun { right: 200px; bottom: 140px; }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; pointer-events: none; }
+#crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255, 240, 210, 0.9); box-shadow: 0 0 3px #000; }
+#crosshair::before { left: 12px; top: 0; width: 2px; height: 26px; }
+#crosshair::after { top: 12px; left: 0; height: 2px; width: 26px; }
+#crosshair.hit::before, #crosshair.hit::after { background: #ff5a3c; }
+#scope { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 0, transparent 33vmin, rgba(0,0,0,0.92) 33.5vmin); }
+#scope::before { content: ''; position: absolute; left: 50%; top: 50%; width: 66vmin; height: 1px; margin-left: -33vmin; background: rgba(0,0,0,0.85); }
+#scope::after { content: ''; position: absolute; left: 50%; top: 50%; height: 66vmin; width: 1px; margin-top: -33vmin; background: rgba(0,0,0,0.85); }
+#ammo { position: absolute; right: 40px; bottom: 34px; font-size: 22px; text-align: right; text-shadow: 0 2px 6px #000; color: #f3e8d2; }
+#ammo small { display: block; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); }
+body.touch #ammo { right: auto; left: 50%; transform: translateX(-50%); bottom: 10px; font-size: 16px; }

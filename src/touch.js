@@ -19,6 +19,7 @@ const BUTTONS = [
   ['heal', '✚', 'sm', 'heal', null],
   ['build', '⌂', 'sm', 'build', null],
   ['next', '⇆', 'sm', 'switchNext', null],
+  ['gun', '⌖', 'sm', 'weapon', null],
 ];
 
 export class TouchControls {

@@ -10,6 +10,7 @@ import { Truck, TRUCK_CAPACITY, REPAIR_COST } from './Truck.js';
 import { TRUCK as TRUCK_SPOT, BRIDGE_ENDS, heightAt as groundHeight, WATER, riverZ, roadDist } from '../world/terrain.js';
 import { setPushers, gustAt } from '../world/wind.js';
 import { CameraRig } from './CameraRig.js';
+import { Smoke, Tracers, Rockets, hitscan, GUNS, makeGunMesh } from './Weapons.js';
 import { SwordTrail, Sparks, Sfx } from './fx.js';
 import { roadX, CAMP, TEMPLE } from '../world/terrain.js';
 
@@ -47,7 +48,9 @@ export class Game {
     // helicopter parked by the camp
     this.heli = new Helicopter(this.scene, world.heliSpawn, world.heliYaw);
     this.inHeli = false;
-    world.interactables.push({ type: 'heli', position: this.heli.pos, radius: 4.2, prompt: 'Board the helicopter' });
+    const heli0 = this.heli;
+    world.interactables.push({ type: 'heli', position: this.heli.pos, radius: 4.2,
+      get prompt() { return heli0.disabled ? `Repair the helicopter (${REPAIR_COST.wood} wood, ${REPAIR_COST.stone} stone stored)` : 'Board the helicopter'; } });
     this.bubbles = new Map();
     this.floats = [];
     this.base = new Base(this);
@@ -61,6 +64,15 @@ export class Game {
       get prompt() { return truck.broken ? `Repair the truck (${REPAIR_COST.wood} wood, ${REPAIR_COST.stone} stone stored)` : 'Drive the truck'; },
     });
     this.heroSafe = this.hero.pos.clone();
+    // weapons: smoke, tracers, rockets; guns to find on the road
+    this.smoke = new Smoke(this.scene);
+    this.tracers = new Tracers(this.scene);
+    this.rocketSys = new Rockets(this.scene, this.smoke);
+    this.heli.smoke = this.smoke; this.heli.rocketSys = this.rocketSys; this.truck.smoke = this.smoke;
+    this.gunState = { ak: { ammo: GUNS.ak.mag, reloadT: 0 }, sniper: { ammo: GUNS.sniper.mag, reloadT: 0 } };
+    this.gunFireT = 0; this.turretT = 0;
+    this.boomLight = new THREE.PointLight(new THREE.Color(1, 0.6, 0.25), 0, 30, 2); this.scene.add(this.boomLight);
+    this.spawnPickups();
     // footsteps: dust on dry ground, splashes and ripples in the shallows
     this.ripples = [];
     const ringGeo = new THREE.RingGeometry(0.86, 1, 40).rotateX(-Math.PI / 2);
@@ -136,6 +148,18 @@ export class Game {
         const tr = this.truck;
         tr.update(gdt, { throttle: input.moveY, steer: input.moveX, brake: input.up }, this.world.collider, events, (x, z) => this.base.blocked(x, z), (p, r, h) => this.base.pushOut(p, r, h));
         tr.ram(this.enemies, events);
+        // the turret follows the camera; fire to shoot
+        const aimT = this.aimPoint(400);
+        tr.aimTurret(aimT, gdt);
+        this.turretT -= gdt;
+        if (input.fire && !tr.broken && this.turretT <= 0 && this.mode === 'play') {
+          this.turretT = 1 / 9;
+          const mz = new THREE.Vector3(); tr.m.turret.muzzle.getWorldPosition(mz);
+          const dir = new THREE.Vector3(); tr.m.turret.muzzle.getWorldDirection(dir);
+          dir.x += (Math.random() - 0.5) * 0.02; dir.y += (Math.random() - 0.5) * 0.02; dir.z += (Math.random() - 0.5) * 0.02; dir.normalize();
+          this.shoot(mz, dir, { dmg: 1.6, sever: 0.55, range: 300 }, events, mz);
+          this.sfx.gun(); this.rig.addShake(0.03);
+        }
         hero.pos.copy(tr.pos); hero.vel.set(0, 0, 0);
         if (input.pressed.has('exitVehicle') && this.mode === 'play') {
           if (Math.abs(tr.speed) < 3) this.exitTruck(); else this.toast('Slow down to get out', true, 1.2);
@@ -146,6 +170,12 @@ export class Game {
         const heli = this.heli;
         heli.aimPoint.copy(this.heliAim());
         heli.update(gdt, { moveX: input.moveX, moveY: input.moveY, up: input.up, down: input.down, fire: input.fire && this.mode === 'play', lookYaw: this.rig.yaw }, this.world.collider, this.enemies, events);
+        // rockets: right mouse / Q / ◎ / R3
+        const rmb = !!input.mouseButtons?.has(2);
+        if (this.mode === 'play' && ((rmb && !this._rmbPrev) || input.pressed.has('lock'))) {
+          if (!heli.fireRocket(events) && heli.rockets <= 0) this.toast('Rockets reloading…', true, 1);
+        }
+        this._rmbPrev = rmb;
         hero.pos.copy(heli.pos); hero.vel.copy(heli.vel);
         if (input.pressed.has('exitVehicle') && this.mode === 'play') {
           if (heli.agl < 3 && heli.speed < 6) this.exitHeli();
@@ -159,10 +189,20 @@ export class Game {
         }
         this.handleLock(input);
         hero.softTarget = this.softTarget(input);
+        // guns: G cycles sword -> AK-47 -> sniper rifle
+        if (input.pressed.has('weapon') && this.mode === 'play') this.cycleWeapon();
+        const gunFireHeld = input.fire, gunFirePressed = input.pressed.has('attack');
+        if (hero.gun) {
+          input.pressed.delete('attack');
+          const cd = new THREE.Vector3(); this.camera.getWorldDirection(cd);
+          hero.aimPitch = Math.asin(THREE.MathUtils.clamp(cd.y, -0.95, 0.95));
+          if (this.target) this.target = null;
+        }
         const wasState = hero.state;
         hero.update(gdt, input, this.rig.yaw, this.target, this.world.collider, events);
         if (hero.state === 'roll' && wasState !== 'roll') this.sfx.roll();
         this.combat(gdt, events);
+        if (hero.gun) this.updateGun(gdt, gunFireHeld, gunFirePressed, events);
         this.heli.update(gdt, { moveX: 0, moveY: 0, up: false, down: false, fire: false, lookYaw: this.heli.yaw }, this.world.collider, this.enemies, events);
         // don't walk through the parked helicopter or truck
         const dx = hero.pos.x - this.heli.pos.x, dz = hero.pos.z - this.heli.pos.z, d = Math.hypot(dx, dz);
@@ -205,7 +245,13 @@ export class Game {
       this.base.preEnemies();
       for (const e of [...this.enemies]) e.update(gdt, hero, this.enemies, this.world.collider, events);
       this.base.postEnemies(gdt, events);
+      // nobody walks through the truck or the helicopter
+      for (const e of this.enemies) if (e.alive && e.kind !== 'boss') this.pushOutOfVehicles(e.pos, e.radius || 0.45);
       GORE.update(gdt);
+      this.rocketSys.update(gdt, this.enemies, this.world.collider, events);
+      this.smoke.update(gdt);
+      this.tracers.update(gdt);
+      this.boomLight.intensity = Math.max(0, this.boomLight.intensity - gdt * 900);
       this.handleEvents(events);
       if (!this.inHeli && !this.inTruck) this.interactions(input); else this.ui.prompt.classList.add('hidden');
       this.story();
@@ -275,6 +321,140 @@ export class Game {
     this.sparks.update(dt);
     this.trail.update(this.hero.model.bladeBase, this.hero.model.bladeTip, false, dt);
     this.hero.animate(dt);
+  }
+
+  // ---------------- guns, explosions ----------------
+  /** Where the crosshair points (first enemy or surface along the camera ray). */
+  aimPoint(range = 400) {
+    const cam = this.camera, o = cam.position.clone(), dir = new THREE.Vector3(); cam.getWorldDirection(dir);
+    const h = hitscan(o, dir, range, this.enemies, this.world.collider);
+    return h ? h.point : o.addScaledVector(dir, range);
+  }
+
+  /** One bullet: hit test, tracer, wounds. */
+  shoot(origin, dir, opts, events, tracerFrom) {
+    const h = hitscan(origin, dir, opts.range || 300, this.enemies, this.world.collider);
+    const end = h ? h.point : origin.clone().addScaledVector(dir, opts.range || 300);
+    this.tracers.add(tracerFrom || origin, end);
+    if (!h) return null;
+    if (h.enemy) {
+      const e = h.enemy;
+      const from = h.point.clone().addScaledVector(dir, -3);
+      if (e.kind === 'zombie') {
+        const head = h.part === 'head';
+        e.takeHit(opts.dmg * (head ? 2 : 1), from, events, { part: h.part || 'torso', sever: head ? Math.min(1, opts.sever * 1.4) : opts.sever });
+      } else {
+        e.takeHit(opts.dmg, from, events);
+        this.sparks.burst(h.point, 8, new THREE.Color(6, 2.6, 0.8), 4, 1);
+      }
+      this.ui.crosshairHit = 0.15;
+    } else {
+      this.sparks.burst(h.point.clone().addScaledVector(dir, -0.05), 4, new THREE.Color(3, 2.4, 1.4), 3, 1);
+      this.smoke.puff(h.point, 1, 0.5, 0.2, 0.4, 0.8);
+    }
+    return h;
+  }
+
+  cycleWeapon() {
+    const hero = this.hero;
+    const order = [null, 'ak', 'sniper'].filter((k) => k === null || hero.guns.has(k));
+    if (order.length < 2) { this.toast('No guns yet — find one along the road', true, 1.6); return; }
+    const next = order[(order.indexOf(hero.gun) + 1) % order.length];
+    hero.equip(next);
+    this.sfx.reload();
+    this.toast(next ? GUNS[next].name : 'Sword and shield', true, 1.2);
+  }
+
+  updateGun(dt, fireHeld, firePressed, events) {
+    const hero = this.hero, kind = hero.gun, G = GUNS[kind], st = this.gunState[kind];
+    this.gunFireT -= dt;
+    if (st.reloading) {
+      st.reloadT -= dt;
+      if (st.reloadT <= 0) { st.reloading = false; st.ammo = G.mag; }
+      return;
+    }
+    if (st.ammo <= 0) { st.reloading = true; st.reloadT = G.reload; this.sfx.reload(); return; }
+    const want = G.semi ? firePressed : fireHeld;
+    if (!want || this.gunFireT > 0 || hero.state !== 'move' || this.mode !== 'play') return;
+    this.gunFireT = 1 / G.rate;
+    st.ammo--;
+    const cam = this.camera, dir = new THREE.Vector3(); cam.getWorldDirection(dir);
+    const spread = G.spread * (hero.aiming ? 0.35 : 1) * (hero.speed > 1 ? 1.8 : 1);
+    dir.x += (Math.random() - 0.5) * spread * 2; dir.y += (Math.random() - 0.5) * spread * 2; dir.z += (Math.random() - 0.5) * spread * 2; dir.normalize();
+    // start the ray at the hero, not behind the camera (walls behind the warden don't block the shot)
+    const t0 = Math.max(0, hero.centre.clone().sub(cam.position).dot(dir) - 0.3);
+    const origin = cam.position.clone().addScaledVector(dir, t0);
+    const mesh = hero.gunMeshes[kind];
+    const muzzle = mesh.userData.muzzle.clone(); mesh.localToWorld(muzzle);
+    this.shoot(origin, dir, G, events, muzzle);
+    this.sparks.burst(muzzle, 4, new THREE.Color(9, 5, 1.8), 2.5, 0.3);
+    hero.recoil = 1;
+    this.rig.addShake(G.kick);
+    this.rig.pitch = (this.rig.pitch || 0) - G.kick * 0.06;
+    if (kind === 'sniper') this.sfx.rifle(); else this.sfx.gun();
+  }
+
+  /** Rockets: fire, smoke, flying zombie parts, a dent in anything close. */
+  explode(pos, radius, dmg, events) {
+    this.sfx.boom(); this.sfx.crash();
+    this.sparks.burst(pos, 90, new THREE.Color(9, 4, 1.2), 9, 4);
+    this.smoke.puff(pos, 26, 0.12, 2.2, 2.0, 3.2);
+    this.boomLight.position.copy(pos).y += 1.5; this.boomLight.intensity = 600;
+    GORE.splat(pos.x, groundHeight(pos.x, pos.z), pos.z, 1.6);
+    const dh = pos.distanceTo(this.hero.pos);
+    this.rig.addShake(Math.max(0.1, 1 - dh / 60));
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const d = e.lockPoint.distanceTo(pos);
+      if (d > radius) continue;
+      const k = 1 - d / radius;
+      if (e.kind === 'zombie') e.takeHit(d < radius * 0.6 ? 99 : 2.5, pos, events, { sever: 1 });
+      else e.takeHit(dmg * k * 2, pos, events);
+    }
+    if (!this.inHeli && !this.inTruck && dh < radius) this.hero.takeHit(40 * (1 - dh / radius), pos, events, { unblockable: true, knock: 1 });
+    const dt2 = pos.distanceTo(this.truck.pos); if (dt2 < radius + 2) this.truck.damage(22 * (1 - dt2 / (radius + 2)), events);
+    const dhe = pos.distanceTo(this.heli.pos); if (dhe < radius + 2 && this.heli.agl < 6) this.heli.damage(15 * (1 - dhe / (radius + 2)), events);
+  }
+
+  /** Push a body (feet at pos) out of the truck's box and the helicopter's cabin. */
+  pushOutOfVehicles(pos, r) {
+    const tr = this.truck, s = Math.sin(tr.yaw), c = Math.cos(tr.yaw);
+    const hw = tr.m.halfW + r, hl = tr.m.halfL + r;
+    const lx = (pos.x - tr.pos.x) * c - (pos.z - tr.pos.z) * s, lz = (pos.x - tr.pos.x) * s + (pos.z - tr.pos.z) * c;
+    if (Math.abs(lx) < hw && Math.abs(lz) < hl && pos.y < tr.pos.y + 2.2) {
+      const px = hw - Math.abs(lx), pz = hl - Math.abs(lz);
+      const nlx = px < pz ? Math.sign(lx) * hw : lx, nlz = px < pz ? lz : Math.sign(lz) * hl;
+      pos.x = tr.pos.x + nlx * c + nlz * s; pos.z = tr.pos.z - nlx * s + nlz * c;
+    }
+    const h = this.heli, dx = pos.x - h.pos.x, dz = pos.z - h.pos.z, d = Math.hypot(dx, dz), R = 1.9 + r;
+    if (d < R && d > 1e-3 && Math.abs(pos.y - h.pos.y) < 3) { pos.x += dx / d * (R - d); pos.z += dz / d * (R - d); }
+  }
+
+  /** The AK-47 on a crate at camp, the sniper rifle up the road. */
+  spawnPickups() {
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x5b4a2e, roughness: 0.8 });
+    const spots = [
+      { kind: 'ak', x: CAMP.x + 6, z: CAMP.z - 7 },
+      { kind: 'sniper', x: roadX(-62) + 5, z: -62 },
+    ];
+    for (const sp of spots) {
+      const y = groundHeight(sp.x, sp.z);
+      const g = new THREE.Group(); g.position.set(sp.x, y, sp.z);
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 0.6), crateMat); crate.position.y = 0.25; crate.castShadow = crate.receiveShadow = true; g.add(crate);
+      const gun = makeGunMesh(sp.kind); gun.position.set(0, 0.6, -0.1); gun.rotation.set(0, Math.PI / 2, Math.PI / 2 - 0.1); g.add(gun);
+      const glow = new THREE.PointLight(new THREE.Color(1, 0.8, 0.4), 4, 4, 2); glow.position.y = 1; g.add(glow);
+      this.scene.add(g);
+      const it = { type: 'pickup', position: g.position.clone(), radius: 2.2, prompt: `Pick up the ${GUNS[sp.kind].name}` };
+      it.onUse = () => {
+        this.hero.guns.add(sp.kind); this.hero.equip(sp.kind);
+        this.scene.remove(g);
+        this.world.interactables.splice(this.world.interactables.indexOf(it), 1);
+        this.sfx.reload();
+        this.toast(GUNS[sp.kind].name, false, 2);
+        this.queueSubs([[sp.kind === 'ak' ? 'An AK-47. Left mouse fires, hold right mouse to aim, G switches back to the sword.' : 'A sniper rifle. Hold right mouse to look through the scope. One shot takes a limb — or a head.', 5]]);
+      };
+      this.world.interactables.push(it);
+    }
   }
 
   // ---------------- helicopter ----------------
@@ -571,6 +751,11 @@ export class Game {
           break;
         }
         case 'sever': this.sfx.gore(); this.rig.addShake(0.15); break;
+        case 'explosion': this.explode(ev.pos, ev.radius, ev.dmg, events); break;
+        case 'rocket-launch': this.sfx.whoosh(); this.rig.addShake(0.12); this.smoke.puff(ev.pos, 6, 0.6, 0.8, 0.5, 1.4); break;
+        case 'truck-wrecked': this.toast('The truck is wrecked — get out and repair it', true, 2.6); this.sfx.crash(); break;
+        case 'heli-wrecked': this.toast('Engine failure! The helicopter needs repairs', true, 2.8); this.sfx.shutdown?.(); break;
+        case 'heli-damage': this.rig.addShake(0.25); break;
         case 'zombie-groan': if (ev.enemy.pos.distanceTo(this.hero.pos) < (ev.quiet ? 12 : 20)) this.sfx.groan(ev.quiet ? 0.08 : 0.18); break;
         case 'zombie-bite': break;
         case 'zombie-say': {
@@ -606,7 +791,13 @@ export class Game {
     if (it.onUse) { it.onUse(); return; }
     this.sfx.ui();
     if (it.type === 'rest') this.rest();
-    if (it.type === 'heli') { this.base.toggleBuild(false); this.enterHeli(); }
+    if (it.type === 'heli') {
+      if (this.heli.disabled) {
+        const s = this.base.stored;
+        if (s.wood >= REPAIR_COST.wood && s.stone >= REPAIR_COST.stone) { s.wood -= REPAIR_COST.wood; s.stone -= REPAIR_COST.stone; this.heli.repair(); this.sfx.place(); this.toast('The helicopter is patched up', false, 2.2); }
+        else this.toast(`Repairs need ${REPAIR_COST.wood} wood and ${REPAIR_COST.stone} stone stored at camp`, true, 2.4);
+      } else { this.base.toggleBuild(false); this.enterHeli(); }
+    }
     if (it.type === 'stockpile') this.base.deposit();
     if (it.type === 'bridgeSite') { this.base.toggleBuild(true); this.base.setType('bridge'); }
     if (it.type === 'truck') {
@@ -741,15 +932,25 @@ export class Game {
 
     if (this.inTruck) {
       const tr = this.truck;
-      this.ui.truckInfo.textContent = `${Math.abs(tr.speed * 3.6).toFixed(0)} km/h · cargo ${tr.cargoTotal}/${TRUCK_CAPACITY} (${tr.cargo.wood} wood, ${tr.cargo.stone} stone)`;
+      this.ui.truckInfo.textContent = `${Math.abs(tr.speed * 3.6).toFixed(0)} km/h · body ${Math.ceil(tr.hp)}% · LMB turret · cargo ${tr.cargoTotal}/${TRUCK_CAPACITY} (${tr.cargo.wood} wood, ${tr.cargo.stone} stone)`;
     }
     if (this.inHeli) {
       const h = this.heli;
-      this.ui.heliAlt.textContent = `ALT ${h.agl.toFixed(0)} m · ${(h.speed * 3.6).toFixed(0)} km/h`;
+      this.ui.heliAlt.textContent = `ALT ${h.agl.toFixed(0)} m · ${(h.speed * 3.6).toFixed(0)} km/h · hull ${Math.ceil(h.hp)}% · rockets ${h.rockets} (RMB/Q)`;
       const ready = h.gunsReady;
       this.ui.heliGun.textContent = h.spool < 0.85 ? 'Spooling up…' : ready ? 'GUNS LIVE' : `Fly below ${GUN_ALTITUDE} m to fire`;
       this.ui.heliGun.className = `gun ${ready ? 'live' : ''}`;
     }
+    // crosshair, scope and ammo for the guns
+    const gun = !this.inHeli && !this.inTruck && this.hero.gun;
+    const G = gun && GUNS[gun], st = gun && this.gunState[gun];
+    const scoped = gun === 'sniper' && this.hero.aiming;
+    $('#crosshair').classList.toggle('hidden', !gun || scoped);
+    $('#scope').classList.toggle('hidden', !scoped);
+    const ammoEl = $('#ammo');
+    ammoEl.classList.toggle('hidden', !gun);
+    if (gun) ammoEl.innerHTML = `<small>${G.name} · G switch · RMB aim</small>${st.reloading ? 'Reloading…' : `${st.ammo} / ${G.mag}`}`;
+    this.rig.zoomFov = gun && this.hero.aiming ? G.zoom : null;
     // reticle
     if (this.target) {
       const p = this.target.lockPoint.project(this.camera);
