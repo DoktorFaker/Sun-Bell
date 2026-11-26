@@ -45,6 +45,7 @@ export class World {
     this.lights = [];
     this.flames = [];
     this.enemySpawns = [];
+    this.zombieSpawns = [];
     this.harvest = [];
     this.leafSources = [];
     if (!TEX.grass) generateTextures(quality.renderScale < 0.8 ? 256 : 512);
@@ -110,6 +111,20 @@ export class World {
     // Enemy spawn points along the road
     for (const [z, off] of [[24, 2], [-44, -2], [-104, 3], [-114, -3], [-178, 0], [-214, 3], [-222, -3]]) {
       this.enemySpawns.push(new THREE.Vector3(roadX(z) + off, heightAt(roadX(z) + off, z), z));
+    }
+  }
+
+  /** Shambling packs in the woods along the road. */
+  buildZombieSpawns(n) {
+    const packs = [[34, 15], [-8, -16], [-58, 16], [-92, -15], [-136, 14], [-168, -16], [-205, 15]];
+    let left = n;
+    for (const [z, off] of packs) {
+      const k = Math.min(left, z > 0 ? 2 : 3);
+      for (let i = 0; i < k; i++) {
+        const x = roadX(z) + off + (Math.random() - 0.5) * 5, zz = z + (Math.random() - 0.5) * 5;
+        this.zombieSpawns.push(new THREE.Vector3(x, heightAt(x, zz), zz));
+      }
+      left -= k; if (left <= 0) break;
     }
   }
 

@@ -28,6 +28,10 @@ Needs Node.js 18+ (https://nodejs.org) and a WebGL 2 browser (Chrome, Edge or Fi
 - **Hollows**: husks of the old temple guard. They wind up (eyes flare), then lunge.
 - **Rustcart**: a rogue market robot (sprite enemy). It rams after its alarm lights flash and is left stunned if it hits a wall or your shield. It also burns a red laser circle where you stand (unblockable, so move) and lobs glowing crates. It enrages below 40% health.
 - **The Client**: a nervous, greedy businessman who wants massive visibility for €10 (sprite enemy). He pitches and complains in speech bubbles, throws crumpled invoices, lunges to grab you, and charges in a tantrum when hurt. He sips from a hip flask to heal and gets tipsy: wobblier, but he throws more.
+- **Zombies** (3D, from the turnaround sheets in `tools/sheets/zombie*.jpg`): packs shamble through the woods beside the road and join the raids; some run. They reach, lunge and bite. Every hit can cut off a limb: forearms, whole arms, shins, legs or the head. A zombie with one leg hops, with no legs it crawls on its arms, and with no arms it still bites. A head cut off or the last of its health tears it fully apart. Rebuild them after changing a sheet with `python3 -I tools/zombie_build.py`.
+
+## Vehicles from blueprints
+The truck and helicopter are built from `tools/sheets/truck.jpg` and `heli.jpg` (side, top, front, rear and bottom views): `python3 -I tools/blueprint.py truck tools/sheets/truck.jpg public/models`.
 
 ## Character
 Pause menu → **Character**: *Heroine* (the VRM Studio "Base Female" model, `public/models/heroine.glb`) or *Warden* (the procedural hero). The heroine is driven by the warden's animation rig, with her feet re-planted by IK. To swap in another VRM Studio character: export **File → Export MMD model**, then run `python3 tools/pmx2glb.py Base_Female.pmx public/models/heroine.glb`.

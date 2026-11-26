@@ -4,6 +4,7 @@ import { heightAt, CAMP, HELIPAD, BRIDGE, BRIDGE_ENDS, bridgeLocal, deckHeight, 
 import { extraGround } from './physics.js';
 import { TEX, triplanar } from '../world/textures.js';
 import { Enemy } from './Enemy.js';
+import { Zombie, zombiesReady } from './Zombie.js';
 import { Client } from './Client.js';
 import { CartBot } from './CartBot.js';
 
@@ -400,7 +401,8 @@ export class Base {
     r.active = true; r.wave++;
     const w = r.wave;
     const list = [];
-    for (let i = 0; i < 3 + w; i++) list.push('hollow');
+    for (let i = 0; i < 3 + w; i++) list.push(zombiesReady() && i % 2 === 0 ? 'zombie' : 'hollow');
+    if (zombiesReady()) for (let i = 0; i < w; i++) list.push('zombie');
     for (let i = 0; i < Math.ceil(w / 2); i++) list.push('client');
     for (let i = 0; i < Math.floor(w / 2); i++) list.push('cartbot');
     const centre = new THREE.Vector3().copy(this.hearth.pos);
@@ -415,7 +417,7 @@ export class Base {
       const R = fromNorth ? 62 : 56;
       const x = centre.x + Math.sin(a) * R, z = centre.z + Math.cos(a) * R;
       const p = new THREE.Vector3(x, heightAt(x, z), z);
-      const e = kind === 'hollow' ? new Enemy(p, this.scene) : kind === 'client' ? new Client(p, this.scene) : new CartBot(p, this.scene);
+      const e = kind === 'zombie' ? new Zombie(p, this.scene) : kind === 'hollow' ? new Enemy(p, this.scene) : kind === 'client' ? new Client(p, this.scene) : new CartBot(p, this.scene);
       e.raider = true;
       const toward = new THREE.Vector3(x - centre.x, 0, z - centre.z).normalize();
       const hearthStop = centre.clone().addScaledVector(toward, 2.4);

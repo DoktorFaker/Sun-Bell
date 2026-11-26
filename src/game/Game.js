@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Hero } from './Hero.js';
 import { Enemy } from './Enemy.js';
+import { Zombie, GORE, zombiesReady } from './Zombie.js';
 import { CartBot } from './CartBot.js';
 import { Client } from './Client.js';
 import { Helicopter, GUN_ALTITUDE } from './Helicopter.js';
@@ -39,6 +40,11 @@ export class Game {
     this.enemies.push(...this.bots);
     this.clients = world.clientSpawns.map((p) => new Client(p, this.scene));
     this.enemies.push(...this.clients);
+    if (zombiesReady()) {
+      world.buildZombieSpawns(world.quality.grass < 10000 ? 12 : 18);
+      this.zombies = world.zombieSpawns.map((p) => new Zombie(p, this.scene));
+      this.enemies.push(...this.zombies);
+    }
     this.boss = new HollowKing(this.scene);
     this.enemies.push(this.boss);
     this.puzzles = new TemplePuzzles(this);
@@ -204,6 +210,7 @@ export class Game {
       this.base.preEnemies();
       for (const e of [...this.enemies]) e.update(gdt, hero, this.enemies, this.world.collider, events);
       this.base.postEnemies(gdt, events);
+      GORE.update(gdt);
       this.handleEvents(events);
       if (!this.inHeli && !this.inTruck) this.interactions(input); else this.ui.prompt.classList.add('hidden');
       this.story();
@@ -517,6 +524,7 @@ export class Game {
       e.takeHit(a.dmg, hero.pos, events);
       const p = e.lockPoint; p.y -= 0.1;
       if (e.kind === 'cartbot') this.sparks.burst(p, 30, new THREE.Color(5, 5.5, 7), 7, 2);
+      else if (e.kind === 'zombie') { /* blood comes from the zombie itself */ }
       else this.sparks.burst(p, 26, new THREE.Color(6, 2.6, 0.8), 6, 1.5);
       this.hitstop = hero.attackIndex === 2 ? 0.11 : 0.065;
       this.rig.addShake(hero.attackIndex === 2 ? 0.45 : 0.28);
@@ -554,7 +562,7 @@ export class Game {
         case 'client-throw': this.sfx.toss(); break;
         case 'client-drink': this.sfx.glug(); break;
         case 'heli-shot': this.sfx.gun(); this.rig.addShake(0.04); break;
-        case 'heli-hit': this.sparks.burst(ev.pos, 10, ev.enemy.kind === 'cartbot' ? new THREE.Color(5, 5.5, 7) : ev.enemy.kind === 'client' ? new THREE.Color(3, 3, 2.8) : new THREE.Color(6, 2.6, 0.8), 5, 1); break;
+        case 'heli-hit': if (ev.enemy.kind === 'zombie') break; this.sparks.burst(ev.pos, 10, ev.enemy.kind === 'cartbot' ? new THREE.Color(5, 5.5, 7) : ev.enemy.kind === 'client' ? new THREE.Color(3, 3, 2.8) : new THREE.Color(6, 2.6, 0.8), 5, 1); break;
         case 'heli-impact': break;
         case 'truck-hit': this.sfx.hit(); this.rig.addShake(0.3); break;
         case 'truck-crash': this.sfx.crash(); this.rig.addShake(0.45); break;
@@ -585,6 +593,11 @@ export class Game {
             if (!this.flags.clientKill) { this.flags.clientKill = true; this.queueSubs([['The Client slumps onto his briefcase. Somewhere, an invoice goes unpaid.', 4.5]]); }
             break;
           }
+          if (ev.zombie) {
+            this.sfx.gore();
+            if (!this.flags.zombieKill) { this.flags.zombieKill = true; this.queueSubs([['The dead walk the valley since the Bell fell silent. Cut them apart — it is the only thing that stops them.', 5]]); }
+            break;
+          }
           if (ev.robot) {
             this.sfx.shutdown();
             this.sparks.burst(ev.enemy.lockPoint, 70, new THREE.Color(3, 5, 9), 5, 3);
@@ -596,6 +609,9 @@ export class Game {
           if (!this.flags.firstKill) { this.flags.firstKill = true; this.queueSubs([['The husk crumbles to ash. A faint warmth lingers where it stood.', 4]]); }
           break;
         }
+        case 'sever': this.sfx.gore(); this.rig.addShake(0.15); break;
+        case 'zombie-groan': if (ev.enemy.pos.distanceTo(this.hero.pos) < (ev.quiet ? 12 : 20)) this.sfx.groan(ev.quiet ? 0.08 : 0.18); break;
+        case 'zombie-bite': break;
         case 'healed': this.sfx.heal(); this.sparks.burst(this.hero.centre, 30, new THREE.Color(4, 3, 1.2), 1.5, 2); break;
         case 'death': this.onDeath(); break;
       }
