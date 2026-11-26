@@ -2,10 +2,19 @@
 import cv2, numpy as np
 
 SHEETS = {
-    1: dict(front=(110, 150, 690, 1345), side=(1460, 150, 1745, 1345), back=(1905, 150, 2485, 1345), side_faces='right'),
-    2: dict(front=(125, 150, 665, 1340), side=(1520, 150, 1805, 1340), back=(1940, 150, 2545, 1340), side_faces='right'),
-    3: dict(front=(135, 115, 635, 1345), side=(1455, 115, 1765, 1345), back=(1945, 115, 2445, 1345), side_faces='left',
-            bg_poly={'front': [(388, 800), (300, 1330), (478, 1330)]}),   # floor shadow between the legs
+    1: dict(front=(40, 55, 966, 1395), side=(970, 55, 1205, 1395), back=(1215, 55, 2110, 1395), side_faces='right',   # A-pose sheet
+            # close-up head sheet: landmarks (eye line, chin, nose) matched by hand to the body sheet
+            face=dict(file='tools/sheets/zombie1_face.jpg', front_box=(150, 0, 1250, 1300), side_box=(1250, 0, 2576, 1300),
+                      body_front=(510, 175), face_front=(660, 540), body_side=(1190, 175), face_side=(2360, 540), k=400 / 82)),
+    2: dict(front=(30, 40, 830, 1410), side=(2125, 40, 2450, 1410), back=(1230, 40, 2025, 1410), side_faces='right',   # A-pose sheet
+            face=dict(file='tools/sheets/zombie2_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1250, 0, 2576, 1438), side_flip=True,
+                      body_front=(428, 165), face_front=(676, 540), body_side=(2382, 192), face_side=(2330, 690), k=4.76)),
+    4: dict(front=(30, 60, 925, 1380), side=(2160, 60, 2510, 1380), back=(1205, 60, 2100, 1380), side_faces='right',   # A-pose sheet
+            face=dict(file='tools/sheets/zombie4_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1300, 0, 2576, 1438), side_flip=True,
+                      body_front=(479, 176), face_front=(666, 570), body_side=(2394, 200), face_side=(2426, 690), k=5.2)),
+    3: dict(front=(40, 40, 962, 1400), side=(2140, 40, 2515, 1400), back=(1215, 40, 2125, 1400), side_faces='right',   # A-pose sheet
+            face=dict(file='tools/sheets/zombie3_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1350, 0, 2576, 1438), side_flip=True,
+                      body_front=(506, 156), face_front=(670, 570), body_side=(2392, 158), face_side=(2456, 570), k=4.5)),
 }
 
 def cut(img, box, bg_poly=None):
@@ -32,25 +41,26 @@ def cut(img, box, bg_poly=None):
     ff = np.pad(m, 1).copy(); fl = np.zeros((h + 4, w + 4), np.uint8); cv2.floodFill(ff, fl, (0, 0), 1)
     m = m | (1 - ff[1:-1, 1:-1])
     x, y, bw, bh = cv2.boundingRect(m)
-    return sub[y:y + bh, x:x + bw], m[y:y + bh, x:x + bw]
+    return sub[y:y + bh, x:x + bw], m[y:y + bh, x:x + bw], (x0 + x, y0 + y)
 
 def load(i):
     img = cv2.imread(f'tools/sheets/zombie{i}.jpg')
     cfg = SHEETS[i]
     out = {}
     for k in ('front', 'side', 'back'):
-        c, m = cut(img, cfg[k], cfg.get('bg_poly', {}).get(k))
+        c, m, o = cut(img, cfg[k], cfg.get('bg_poly', {}).get(k))
         if k == 'side' and cfg['side_faces'] == 'left':
             c, m = c[:, ::-1].copy(), m[:, ::-1].copy()
         out[k] = (c, m)
+        out[k + '_origin'] = o
     return out
 
 if __name__ == '__main__':
-    for i in (1, 2, 3):
+    for i in (1, 2, 3, 4):
         v = load(i)
         tiles = []
         for k in ('front', 'side', 'back'):
-            c, m = v[k]
+            c, m = v[k][:2]
             t = c.copy(); t[m == 0] = (255, 0, 255)
             t = cv2.resize(t, (int(t.shape[1] * 500 / t.shape[0]), 500)); tiles.append(t)
         cv2.imwrite(f'/tmp/zb/seg{i}.png', np.hstack(tiles))

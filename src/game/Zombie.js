@@ -13,7 +13,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const KINDS = [];   // loaded variants: { meta, map }
 
 export async function loadZombies() {
-  await Promise.all([1, 2, 3].map(async (i) => {
+  await Promise.all([1, 2, 3, 4].map(async (i) => {
     try {
       const [meta, map] = await Promise.all([
         fetch(`./models/zombie${i}.json`).then((r) => r.json()),
@@ -45,10 +45,9 @@ function buildGeometries(meta) {
 }
 
 /** Paints the parts by projecting the front, side and back drawings (blended by facing). */
-function projectedMaterial(kind) {
+function projectedMaterial(kind, u = kind.meta.uv, flash = { value: 0 }) {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.35 });
-  const u = kind.meta.uv;
-  m.userData.flash = { value: 0 };
+  m.userData.flash = flash;
   m.onBeforeCompile = (sh) => {
     sh.uniforms.tAtlas = { value: kind.map };
     sh.uniforms.uF = { value: new THREE.Vector4(...u.front) };
@@ -222,6 +221,8 @@ export class Zombie {
     this.flash = 0;
     this.scene = scene;
     this.mat = projectedMaterial(kind);
+    // the close-up head sheet, when there is one, paints the head
+    this.headMat = kind.meta.headUV ? projectedMaterial(kind, kind.meta.headUV, this.mat.userData.flash) : this.mat;
 
     // build the body: root (pelvis) -> torso -> head/arms ; root -> legs
     const g = new THREE.Group();
@@ -239,7 +240,7 @@ export class Zombie {
       const grp = new THREE.Group();
       const pp = pivotOf(parentName);
       grp.position.set(p.pivot[0] - pp[0], p.pivot[1] - pp[1], p.pivot[2] - pp[2]);
-      const mesh = new THREE.Mesh(kind.geos[n], this.mat);
+      const mesh = new THREE.Mesh(kind.geos[n], n === 'head' ? this.headMat : this.mat);
       mesh.castShadow = true; mesh.receiveShadow = true;
       grp.add(mesh);
       parent.add(grp);

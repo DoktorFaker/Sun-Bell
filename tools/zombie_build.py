@@ -9,7 +9,7 @@ usage: python3 -I tools/zombie_build.py  -> public/models/zombie{1,2,3}.json + .
 import json, sys, os
 import numpy as np, cv2
 sys.path.insert(0, os.path.dirname(__file__))
-from zombie_seg import load
+from zombie_seg import load, SHEETS
 
 H = 1.75          # standing height in metres
 SEG = 14          # vertices per ring
@@ -36,9 +36,109 @@ def bleed(crop, mask):
     return np.where(m, crop, fill)
 
 
+def keep_largest(m):
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m.astype(np.uint8))
+    if n <= 1: return m
+    return (lab == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+
+
+def find_arms(F, cx, h, w):
+    """Arms are the thin parts on either side: open the silhouette with a disc wider than an arm."""
+    k = int(h * 0.075) | 1
+    core = cv2.morphologyEx(F, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    thin = (F & ~core).astype(np.uint8)
+    thin[int(h * 0.7):] = 0
+    thin[:int(h * 0.12)] = 0
+    n, lab, st, cen = cv2.connectedComponentsWithStats(thin)
+    out = {}
+    for sd, sgn in (('R', -1), ('L', 1)):
+        best = None
+        for i in range(1, n):
+            a = st[i, cv2.CC_STAT_AREA]
+            if a < h * h * 0.004: continue
+            if (cen[i][0] - cx) * sgn < h * 0.07: continue
+            if best is None or a > st[best, cv2.CC_STAT_AREA]: best = i
+        if best is None: return None
+        m = (lab == best).astype(np.uint8)
+        x, y, bw, bh = cv2.boundingRect(m)
+        if np.hypot(bw, bh) < h * 0.27: return None   # arms held against the body: use the row method
+        out[sd] = m
+    return out
+
+
+def axis_arm(m, cx, h, s, ss, czs, side_at, neck):
+    """Slice an arm across its own length (works for hanging and outstretched arms)."""
+    ys, xs = np.nonzero(m)
+    P = np.stack([xs, ys], 1).astype(float)
+    mu = P.mean(0)
+    u, sv, vt = np.linalg.svd(P - mu, full_matrices=False)
+    a = vt[0]
+    t = (P - mu) @ a
+    # the shoulder end is the one nearer the body's centre line / higher up
+    e0 = mu + a * t.min(); e1 = mu + a * t.max()
+    if abs(e1[0] - cx) + e1[1] * 0.3 < abs(e0[0] - cx) + e0[1] * 0.3: a = -a; t = -t
+    perp = np.array([-a[1], a[0]])
+    q = (P - mu) @ perp
+    t0, t1 = t.min(), t.max()
+    step = max(4.0, (t1 - t0) / 26)
+    slices = []
+    for tc in np.arange(t0 + step / 2, t1, step):
+        sel = np.abs(t - tc) < step * 0.75
+        if sel.sum() < 4: continue
+        qa, qb = np.percentile(q[sel], [3, 97])
+        slices.append((tc, (qa + qb) / 2, max((qb - qa) / 2, 2.0)))
+    S = np.array(slices)
+    for c in (1, 2):
+        S[1:-1, c] = (S[:-2, c] + 2 * S[1:-1, c] + S[2:, c]) / 4
+    # image -> model; image y grows downward
+    def to_model(tc, qc):
+        p = mu + a * tc + perp * qc
+        return np.array([(p[0] - cx) * s, (h - p[1]) * s])
+    am = np.array([a[0], -a[1]]); am /= np.linalg.norm(am)
+    pm = np.array([-am[1], am[0]])        # ring frame: pm x z == axis direction
+    split = t0 + 0.46 * (t1 - t0)
+    ext = 0.045 / s
+    def ring_list(lo, hi, pre, post):
+        R = [r for r in S if lo <= r[0] <= hi]
+        if pre: R = [(R[0][0] - pre, R[0][1], R[0][2] * 0.92)] + R
+        if post: R = R + [(R[-1][0] + post, R[-1][1], R[-1][2] * 0.92)]
+        return R
+    def mesh(R):
+        pos, idx = [], []
+        for (tc, qc, hw) in R:
+            c = to_model(tc, qc)
+            wv = hw * s
+            zc_px, hz = side_at(c[1])
+            zc = (zc_px - czs) * ss * 0.6
+            wz = min(hz * ss, wv * 1.0); wz = max(wz, wv * 0.6)
+            for k in range(SEG):
+                th = k / SEG * np.pi * 2
+                xy = c + pm * wv * np.cos(th)
+                pos.append((xy[0], xy[1], zc + wz * np.sin(th)))
+        n = len(R)
+        for j in range(n - 1):
+            for k in range(SEG):
+                a0, b0 = j * SEG + k, j * SEG + (k + 1) % SEG
+                idx += [a0, a0 + SEG, b0, b0, a0 + SEG, b0 + SEG]
+        for j, flip in ((0, False), (n - 1, True)):
+            ring = np.array(pos[j * SEG:(j + 1) * SEG]); ci = len(pos); pos.append(tuple(ring.mean(0)))
+            for k in range(SEG):
+                a0, b0 = j * SEG + k, j * SEG + (k + 1) % SEG
+                idx += [ci, b0, a0] if not flip else [ci, a0, b0]
+        return dict(pos=np.round(np.array(pos), 4).ravel().tolist(), idx=idx)
+    up = mesh(ring_list(t0, split, ext * 1.4, ext * 0.6))
+    fore = mesh(ring_list(split, t1 + 1, ext, 0))
+    def piv(tc, qc):
+        c = to_model(tc, qc); zc_px, _ = side_at(c[1])
+        return [round(float(c[0]), 4), round(float(c[1]), 4), round(float((zc_px - czs) * ss * 0.6), 4)]
+    first = S[0]; mid = min(S, key=lambda r: abs(r[0] - split))
+    return up, fore, piv(first[0] - ext * 0.3, first[1]), piv(mid[0], mid[1])
+
+
 def build(i, out):
     V = load(i)
     fc, F = V['front']; sc, S = V['side']; bc, B = V['back']
+    F0 = F.copy()
     h, w = F.shape; s = H / h
     hs, ws = S.shape; ss = H / hs
     hb, wb = B.shape; sb = H / hb
@@ -49,6 +149,10 @@ def build(i, out):
     cxb = np.mean(pick(runs_of(B[int(hb * 0.5)]), wb // 2))
     czs = np.mean(max(runs_of(S[int(hs * 0.5)]), key=lambda r: r[1] - r[0]))
 
+    arm_masks = find_arms(F, cx, h, w)
+    if arm_masks:
+        F = F & ~(arm_masks['R'] | arm_masks['L'])
+        F = keep_largest(F)
     neck = int(h * 0.155)
     armpit = next((r for r in range(int(h * 0.17), int(h * 0.4)) if len(runs_of(F[r])) >= 3), int(h * 0.24)) + 4
     crotch = next((r for r in range(int(h * 0.42), int(h * 0.6)) if not F[r, int(cx)] and len(runs_of(F[r])) >= 2), int(h * 0.5))
@@ -169,9 +273,9 @@ def build(i, out):
         if len(R) < 2: return None
         # overlap the joints so no gaps open when the parts bend
         ext = 0.045 / s
-        if name != 'torso':
+        if name not in ('torso', 'head'):
             R = np.vstack([[R[0, 0] - ext, R[0, 1], R[0, 2] * 0.9], R])
-        if name in ('torso', 'uarmR', 'uarmL', 'thighR', 'thighL'):
+        if name in ('torso', 'head', 'uarmR', 'uarmL', 'thighR', 'thighL'):
             R = np.vstack([R, [R[-1, 0] + ext * 0.6, R[-1, 1], R[-1, 2] * 0.9]])
         pos, idx = [], []
         for (r, xc, hw) in R:
@@ -209,12 +313,20 @@ def build(i, out):
     }
     defs = [('head', 4, caps['head'], None), ('torso', 6, caps['torso'], None)]
     for sd in 'RL':
-        defs += [('uarm' + sd, 6, caps['arm'], 'torso'), ('farm' + sd, 6, caps['arm'], 'uarm' + sd),
-                 ('thigh' + sd, 7, caps['leg'], 'root'), ('shin' + sd, 7, caps['leg'], 'thigh' + sd)]
+        if not arm_masks:
+            defs += [('uarm' + sd, 6, caps['arm'], 'torso'), ('farm' + sd, 6, caps['arm'], 'uarm' + sd)]
+        defs += [('thigh' + sd, 7, caps['leg'], 'root'), ('shin' + sd, 7, caps['leg'], 'thigh' + sd)]
     built = {}
     for name, step, cap, parent in defs:
         p = make(name, step, cap)
         if p: built[name] = (p, parent)
+    arm_piv = {}
+    if arm_masks:
+        for sd in 'RL':
+            up, fore, sh, el = axis_arm(arm_masks[sd], cx, h, s, ss, czs, side_at, neck)
+            built['uarm' + sd] = (dict(name='uarm' + sd, **up), 'torso')
+            built['farm' + sd] = (dict(name='farm' + sd, **fore), 'uarm' + sd)
+            arm_piv['uarm' + sd] = sh; arm_piv['farm' + sd] = el
 
     # joints (pivots) in model space
     def centre_row(name, r):
@@ -227,46 +339,84 @@ def build(i, out):
     piv['torso'] = [0, round((h - crotch) * s + 0.08, 4), round((side_at((h - crotch) * s)[0] - czs) * ss, 4)]
     piv['head'] = centre_row('torso', neck + 2)
     for sd in 'RL':
-        R = built['uarm' + sd][0]['rows']
-        sh = centre_row('uarm' + sd, R[0, 0]); sh[1] += 0.04
-        # shoulder sits in from the arm's outer edge
-        sh[0] = sh[0] * 0.85
-        piv['uarm' + sd] = sh
-        piv['farm' + sd] = centre_row('uarm' + sd, built['uarm' + sd][0]['rows'][-1, 0])
+        if arm_piv:
+            piv['uarm' + sd] = arm_piv['uarm' + sd]; piv['farm' + sd] = arm_piv['farm' + sd]
+        else:
+            R = built['uarm' + sd][0]['rows']
+            sh = centre_row('uarm' + sd, R[0, 0]); sh[1] += 0.04
+            sh[0] = sh[0] * 0.85   # shoulder sits in from the arm's outer edge
+            piv['uarm' + sd] = sh
+            piv['farm' + sd] = centre_row('uarm' + sd, built['uarm' + sd][0]['rows'][-1, 0])
         piv['thigh' + sd] = centre_row('thigh' + sd, built['thigh' + sd][0]['rows'][0, 0])
         piv['shin' + sd] = centre_row('thigh' + sd, built['thigh' + sd][0]['rows'][-1, 0])
 
-    # atlas: front | side | back, 1024 tall
-    AH = 1280   # keep the sheets' full detail
+    # atlas: row 1 = front | side | back of the body ; row 2 = the close-up head sheet (if any)
+    RH = 1280
     tiles = []
-    for c, m in ((fc, F), (sc, S), (bc, B)):
+    for c, m in ((fc, F0), (sc, S), (bc, B)):
         t = bleed(c, m)
-        tiles.append(cv2.resize(t, (int(round(t.shape[1] * AH / t.shape[0])), AH), interpolation=cv2.INTER_AREA))
-    AW = sum(t.shape[1] for t in tiles)
-    atlas = np.hstack(tiles)
-    offs = np.cumsum([0] + [t.shape[1] for t in tiles])
-    # projection: atlas u = au*coord + bu ; texture v (flipY) = av*y + bv
+        tiles.append(cv2.resize(t, (int(round(t.shape[1] * RH / t.shape[0])), RH), interpolation=cv2.INTER_AREA))
+    face = SHEETS[i].get('face')
+    ftiles = []
+    if face:
+        fimg = cv2.imread(face['file'])
+        FH = 1024
+        for key in ('front_box', 'side_box'):
+            x0, y0, x1, y1 = face[key]
+            t = fimg[y0:y1, x0:x1]
+            if key == 'side_box' and face.get('side_flip'): t = t[:, ::-1]   # landmarks are given in the flipped picture
+            t = np.ascontiguousarray(t)
+            fm = (np.abs(t.astype(int) - 250).max(axis=2) > 18).astype(np.uint8)   # anything not the white backdrop
+            fm = cv2.morphologyEx(fm, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            t = bleed(t, fm)
+            ftiles.append(cv2.resize(t, (int(round(t.shape[1] * FH / t.shape[0])), FH), interpolation=cv2.INTER_AREA))
+    AW = max(sum(t.shape[1] for t in tiles), sum(t.shape[1] for t in ftiles) if ftiles else 0)
+    AT = RH + (ftiles[0].shape[0] if ftiles else 0)
+    atlas = np.zeros((AT, AW, 3), np.uint8)
+    x = 0; offs = []
+    for t in tiles: atlas[:RH, x:x + t.shape[1]] = t; offs.append(x); x += t.shape[1]
+    fx = 0; foffs = []
+    for t in ftiles: atlas[RH:, fx:fx + t.shape[1]] = t; foffs.append(fx); fx += t.shape[1]
     def proj(off, tw, img_w, img_h, centre, scale, sign):
-        # px = centre + sign*coord/scale ; u = (off + px/img_w*tw)/AW
+        # px = centre + sign*coord/scale ; py = img_h - y/scale
         au = sign / scale / img_w * tw / AW
         bu = (off + centre / img_w * tw) / AW
-        # py = img_h - y/scale ; v_img = py/img_h ; texture v = 1 - v_img = y/(scale*img_h)
-        av = 1 / (scale * img_h); bv = 0.0
+        av = RH / (scale * img_h * AT); bv = 1 - RH / AT
         return [au, bu, av, bv]
     uv = {
         'front': proj(offs[0], tiles[0].shape[1], w, h, cx, s, 1),
         'side': proj(offs[1], tiles[1].shape[1], ws, hs, czs, ss, 1),
         'back': proj(offs[2], tiles[2].shape[1], wb, hb, cxb, sb, -1),
     }
+    head_uv = None
+    if face:
+        k = face['k']
+        def fproj(tile_i, box, body_lm, face_lm, origin, centre, scale, img_h):
+            # body abs x = ox + centre + coord/scale ; face x = fx + k*(abs - bx)
+            ox, oy = origin
+            Kx = k / scale; Cx = face_lm[0] + k * (ox + centre - body_lm[0])
+            # body abs y = oy + img_h - y/scale ; face y = fy + k*(abs - by)
+            Ky = -k / scale; Cy = face_lm[1] + k * (oy + img_h - body_lm[1])
+            x0, y0, x1, y1 = box; fw, fh = x1 - x0, y1 - y0
+            tw, th = ftiles[tile_i].shape[1], ftiles[tile_i].shape[0]
+            tx, ty = foffs[tile_i], RH
+            return [Kx * tw / (fw * AW), (tx + (Cx - x0) * tw / fw) / AW,
+                    -Ky * th / (fh * AT), 1 - (ty + (Cy - y0) * th / fh) / AT]
+        head_uv = {
+            'front': fproj(0, face['front_box'], face['body_front'], face['face_front'], V['front_origin'], cx, s, h),
+            'side': fproj(1, face['side_box'], face['body_side'], face['face_side'], V['side_origin'], czs, ss, hs),
+            'back': uv['back'],
+        }
     cv2.imwrite(f'{out}/zombie{i}.jpg', atlas, [cv2.IMWRITE_JPEG_QUALITY, 93])
     parts = []
     for name, (p, parent) in built.items():
         parts.append(dict(name=name, parent=parent, pivot=piv[name], pos=p['pos'], idx=p['idx']))
     meta = dict(H=H, root=piv['root'], parts=parts, uv=uv)
+    if head_uv: meta['headUV'] = head_uv
     json.dump(meta, open(f'{out}/zombie{i}.json', 'w'), separators=(',', ':'))
     print(i, 'armpit', armpit / h, 'crotch', crotch / h, 'parts', list(built), 'verts', sum(len(p['pos']) // 3 for p in parts))
 
 
 if __name__ == '__main__':
-    for i in (1, 2, 3):
+    for i in (1, 2, 3, 4):
         build(i, 'public/models')

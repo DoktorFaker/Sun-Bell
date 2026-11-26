@@ -25,7 +25,7 @@ Needs Node.js 18+ (https://nodejs.org) and a WebGL 2 browser (Chrome, Edge or Fi
 | FPS counter | F3 | |
 
 ## Enemies
-- **Zombies** (3D, from the turnaround sheets in `tools/sheets/zombie*.jpg`): packs shamble through the woods beside the road and join the raids; some run. They reach, lunge and bite. Every hit can cut off a limb: forearms, whole arms, shins, legs or the head. A zombie with one leg hops, with no legs it crawls on its arms, and with no arms it still bites. A head cut off or the last of its health tears it fully apart. Rebuild them after changing a sheet with `python3 -I tools/zombie_build.py`.
+- **Zombies** (3D, four of them, from the turnaround sheets in `tools/sheets/zombie1-4.jpg`, with close-up head sheets `zombie*_face.jpg` for the faces): packs shamble through the woods beside the road and join the raids; some run. They reach, lunge and bite. Every hit can cut off a limb: forearms, whole arms, shins, legs or the head. A zombie with one leg hops, with no legs it crawls on its arms, and with no arms it still bites. A head cut off or the last of its health tears it fully apart. Rebuild them after changing a sheet with `python3 -I tools/zombie_build.py`.
 
 ## Vehicles from blueprints
 The truck and helicopter are built from `tools/sheets/truck.jpg` and `heli.jpg` (side, top, front, rear and bottom views): `python3 -I tools/blueprint.py truck tools/sheets/truck.jpg public/models`.
