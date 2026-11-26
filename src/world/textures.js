@@ -297,7 +297,7 @@ export function triplanar(mat, { tex, scale = 0.5, normalScale = 1, tint = null,
 // and it replaces the generated texture. A normal map is derived from it,
 // or supplied as <name>_normal.(png|jpg|webp).
 // ------------------------------------------------------------------
-export const OVERRIDABLE = ['grass', 'dirt', 'rock', 'sand', 'bricks', 'bark', 'planks', 'cloth', 'iron', 'roof', 'leather', 'cobble'];
+export const OVERRIDABLE = ['grass', 'dirt', 'rock', 'sand', 'bricks', 'bark', 'planks', 'cloth', 'iron', 'roof', 'leather', 'cobble', 'cliff', 'cliff2'];
 
 function loadImage(url) {
   return new Promise((res) => {

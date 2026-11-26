@@ -84,7 +84,7 @@ export function makeMaterials() {
   M.stone = triplanar(new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 0.88 }), { tex: TEX.bricks, scale: 0.42, normalScale: 1.1 });
   M.stoneDark = triplanar(new THREE.MeshStandardMaterial({ color: 0x8c8476, roughness: 0.9 }), { tex: TEX.bricks, scale: 0.42, normalScale: 1.1 });
   M.stoneDark.userData.key = 'dark';
-  M.rock = triplanar(new THREE.MeshStandardMaterial({ color: 0xc4beb4, roughness: 0.92 }), { tex: TEX.rock, scale: 0.32, normalScale: 1.3, macro: 0.4 });
+  M.rock = triplanar(new THREE.MeshStandardMaterial({ color: 0xc4beb4, roughness: 0.92 }), { tex: TEX.cliff || TEX.rock, scale: TEX.cliff ? 0.16 : 0.32, normalScale: 1.3, macro: 0.4 });
   M.road = triplanar(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), { tex: TEX.dirt, scale: 0.35 });
   M.bark = triplanar(new THREE.MeshStandardMaterial({ color: 0xd8d0c8, roughness: 0.95 }), { tex: TEX.bark, scale: 0.9, normalScale: 1.4, wind: 1 });
   M.bark.userData.afterCompile = (shader) => addWind(shader, treeWindVertex(false));
@@ -130,6 +130,9 @@ export function makeTerrainMaterial() {
     tRA: { value: TEX.rock.map }, tRN: { value: TEX.rock.normal },
     tSA: { value: TEX.sand.map }, tSN: { value: TEX.sand.normal },
     uWater: { value: 0 },
+    // mountain photos: blocky outcrops and ridged slopes
+    tCA: { value: (TEX.cliff || TEX.rock).map }, tCN: { value: (TEX.cliff || TEX.rock).normal },
+    tC2A: { value: (TEX.cliff2 || TEX.cliff || TEX.rock).map }, tC2N: { value: (TEX.cliff2 || TEX.cliff || TEX.rock).normal },
     // per-layer brightness: photos (custom) are brighter than generated textures
     uGain: { value: new THREE.Vector4(TEX.grass.custom ? 0.68 : 1, TEX.dirt.custom ? 0.68 : 1, TEX.rock.custom ? 0.62 : 1, TEX.sand.custom ? 0.7 : 1) },
   };
@@ -142,10 +145,23 @@ export function makeTerrainMaterial() {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec4 vSplat; varying vec3 vTPPos; varying vec3 vTPNrm;
-        uniform sampler2D tGA, tGN, tDA, tDN, tRA, tRN, tSA, tSN;
+        uniform sampler2D tGA, tGN, tDA, tDN, tRA, tRN, tSA, tSN, tCA, tCN, tC2A, tC2N;
+
         uniform float uWater;
         uniform vec4 uGain;
         ${triplanarGLSL}
+        // two cliff photos, each sampled at two scales: near detail plus large shapes far away, so repeats don't show
+        float cliffMix(vec3 p) { return smoothstep(0.35, 0.65, texture(tC2A, p.xz * 0.0021 + 0.3).g * 0.6 + sin(p.x * 0.011 + p.z * 0.007) * 0.25 + 0.2); }
+        vec4 cliffAlb(vec3 p, vec3 n, float far) {
+          vec4 a = mix(tpAlbedo(tCA, p, n, 0.075), tpAlbedo(tCA, p, n, 0.022), far);
+          vec4 b = mix(tpAlbedo(tC2A, p, n, 0.055), tpAlbedo(tC2A, p, n, 0.017), far);
+          return mix(a, b, cliffMix(p));
+        }
+        vec3 cliffNrm(vec3 p, vec3 n, float far) {
+          vec3 a = tpNormal(tCN, p, n, mix(0.075, 0.022, far), 1.6);
+          vec3 b = tpNormal(tC2N, p, n, mix(0.055, 0.017, far), 1.6);
+          return normalize(mix(a, b, cliffMix(p)));
+        }
         vec3 topN(sampler2D t, vec2 uv, vec3 n, float k) { vec3 ts = texture(t, uv).xyz * 2.0 - 1.0; return normalize(vec3(n.x + ts.x * k, n.y, n.z + ts.y * k)); }`)
       .replace('#include <map_fragment>', `
         vec3 tn = normalize(vTPNrm);
@@ -153,18 +169,29 @@ export function makeTerrainMaterial() {
         vec4 gA = texture(tGA, uv * 0.26), gB = texture(tGA, uv * 0.061 + 0.37);
         vec4 dA = texture(tDA, uv * 0.3), dB = texture(tDA, uv * 0.07 + 0.11);
         vec4 sA = texture(tSA, uv * 0.33);
+        float camD = length(vTPPos - cameraPosition);
+        float farK = smoothstep(60.0, 260.0, camD) * 0.75;
         vec4 rA = tpAlbedo(tRA, vTPPos, tn, 0.16);
+        // steep and high ground is mountain: use the cliff photos there
+        float mtn = clamp(smoothstep(0.82, 0.55, tn.y) + smoothstep(18.0, 45.0, vTPPos.y), 0.0, 1.0);
+        vec4 cA = cliffAlb(vTPPos, tn, farK);
+        rA = mix(rA * uGain.z, cA * 0.62, mtn); rA.a = mix(rA.a, 0.6, mtn);
         vec3 grassC = gA.rgb * (0.62 + 0.76 * gB.rgb) * uGain.x;
         vec3 dirtC = dA.rgb * (0.7 + 0.6 * dB.rgb) * uGain.y;
-        rA.rgb *= uGain.z; sA.rgb *= uGain.w;
+        sA.rgb *= uGain.w;
         vec4 w = max(vSplat, 0.0) + 1e-4;
         w *= vec4(gA.a + 0.35, dA.a + 0.35, rA.a + 0.35, sA.a + 0.35);
         w = pow(w, vec4(4.0)); w /= (w.x + w.y + w.z + w.w);
+        w = mix(w, vec4(0.0, 0.0, 1.0, 0.0), mtn * 0.85);
         vec3 alb = grassC * w.x + dirtC * w.y + rA.rgb * w.z + sA.rgb * w.w;
         float wet = smoothstep(uWater + 0.5, uWater - 0.05, vTPPos.y) * (w.w + w.y * 0.6);
         alb *= 1.0 - wet * 0.45;
         diffuseColor.rgb *= alb * 1.75;
-        vec4 tW = w;`)
+        vec4 tW = w; float tMtn = mtn;`)
+      .replace('#include <color_fragment>', `
+        #if defined( USE_COLOR )
+          diffuseColor.rgb *= mix(vColor.rgb, vec3(0.92), tMtn);   // the photos carry their own colour on the mountains
+        #endif`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = clamp(dot(tW, vec4(0.97, 0.9, 0.82, 0.8)) - wet * 0.55, 0.12, 1.0);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -172,7 +199,7 @@ export function makeTerrainMaterial() {
           vec3 nG = topN(tGN, uv * 0.26, tn, 1.0);
           vec3 nD = topN(tDN, uv * 0.3, tn, 1.0);
           vec3 nS = topN(tSN, uv * 0.33, tn, 0.8);
-          vec3 nR = tpNormal(tRN, vTPPos, tn, 0.16, 1.3);
+          vec3 nR = normalize(mix(tpNormal(tRN, vTPPos, tn, 0.16, 1.3), cliffNrm(vTPPos, tn, farK), mtn));
           vec3 wn = normalize(nG * tW.x + nD * tW.y + nR * tW.z + nS * tW.w);
           normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
         }`);
