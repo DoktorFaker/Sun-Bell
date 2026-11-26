@@ -374,6 +374,16 @@ export const fxaaFrag = /* glsl */ `
 varying vec2 vUv;
 uniform sampler2D tSrc;
 uniform vec2 uRes;
+uniform float uSharp;
+vec3 sharpen(vec3 c, vec2 uv, vec2 inv) {
+  // contrast-adaptive sharpening: undo the softness of upscaling and anti-aliasing
+  vec3 n = texture(tSrc, uv + vec2(0.0, -inv.y)).rgb, s = texture(tSrc, uv + vec2(0.0, inv.y)).rgb;
+  vec3 e = texture(tSrc, uv + vec2(inv.x, 0.0)).rgb, w = texture(tSrc, uv + vec2(-inv.x, 0.0)).rgb;
+  vec3 mn = min(c, min(min(n, s), min(e, w))), mx = max(c, max(max(n, s), max(e, w)));
+  vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
+  vec3 k = -amp * uSharp * 0.2;
+  return clamp((c + (n + s + e + w) * k) / (1.0 + 4.0 * k), 0.0, 1.0);
+}
 void main() {
   vec2 inv = 1.0 / uRes;
   vec2 uv = vUv;
@@ -385,7 +395,7 @@ void main() {
   float lM = cM.a;
   float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
   float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
-  if (lMax - lMin < max(0.0312, lMax * 0.125)) { gl_FragColor = vec4(cM.rgb, 1.0); return; }
+  if (lMax - lMin < max(0.0312, lMax * 0.125)) { gl_FragColor = vec4(sharpen(cM.rgb, uv, inv), 1.0); return; }
   vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
   float reduce = max((lNW + lNE + lSW + lSE) * 0.25 * 0.125, 1.0 / 128.0);
   float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
@@ -394,6 +404,7 @@ void main() {
   vec3 b = a * 0.5 + 0.25 * (texture(tSrc, uv + dir * -0.5).rgb + texture(tSrc, uv + dir * 0.5).rgb);
   float lB = dot(b, vec3(0.299, 0.587, 0.114));
   gl_FragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, sharpen(gl_FragColor.rgb, uv, inv), 0.5);
 }
 `;
 

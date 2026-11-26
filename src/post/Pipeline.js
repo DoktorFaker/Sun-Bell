@@ -127,7 +127,7 @@ export class Pipeline {
       uTint: { value: new THREE.Vector3(1, 1, 1) }, uVignette: { value: 0 }, uFade: { value: 0 }, uFadeColor: { value: new THREE.Vector3() },
       uHurt: { value: 0 }, uTime: { value: 0 }, uGrain: { value: 0 },
     });
-    this.mFXAA = mat(S.fxaaFrag, { tSrc: { value: null }, uRes: { value: new THREE.Vector2() } });
+    this.mFXAA = mat(S.fxaaFrag, { tSrc: { value: null }, uRes: { value: new THREE.Vector2() }, uSharp: { value: 0.6 } });
     this.lumInit = true;
   }
 
@@ -284,6 +284,8 @@ export class Pipeline {
     {
       const u = this.mFXAA.uniforms;
       u.tSrc.value = this.ldrRT.texture; u.uRes.value.set(this.W, this.H);
+      // sharpen more when the image is being upscaled
+      u.uSharp.value = THREE.MathUtils.clamp(0.45 + (this.width / this.W - 1) * 1.2, 0.45, 1.0);
       this.pass(this.mFXAA, null);
     }
   }

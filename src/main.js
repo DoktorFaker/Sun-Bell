@@ -56,17 +56,20 @@ function dynRes(ms) {
   const avg = drs.acc / drs.n; drs.acc = 0; drs.n = 0;
   if (drs.cool > 0) return;
   let next = drs.scale;
-  if (avg > 18.2) { next = Math.max(0.6, drs.scale - (avg > 26 ? 0.12 : 0.06)); drs.upBlock = 12; }
+  if (avg > 18.2) { next = Math.max(resMode === 'auto' ? 0.7 : 0.85, drs.scale - (avg > 26 ? 0.12 : 0.06)); drs.upBlock = 12; }
   else if (avg < 16.2 && drs.upBlock <= 0) next = Math.min(1, drs.scale + 0.04);
   if (Math.abs(next - drs.scale) > 0.01) { drs.scale = next; drs.cool = 1.2; applySize(); }
 }
+// Resolution setting: auto (preset), sharp (up to 2x), native (the screen's full pixels)
+let resMode = (() => { try { return localStorage.getItem('sunbell.res') || 'auto'; } catch { return 'auto'; } })();
 function applySize() {
-  const dpr = Math.min(devicePixelRatio || 1, quality.maxDpr);
+  const cap = resMode === 'native' ? 4 : resMode === 'sharp' ? Math.max(2, quality.maxDpr) : quality.maxDpr;
+  const dpr = Math.min(devicePixelRatio || 1, cap);
   renderer.setPixelRatio(dpr);
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  pipeline.configure({ ...quality, renderScale: quality.renderScale * drs.scale }, Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
+  pipeline.configure({ ...quality, renderScale: (resMode === 'auto' ? quality.renderScale : 1) * drs.scale }, Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
 }
 function applyQuality(name, why) {
   tier = name; quality = PRESETS[name];
@@ -97,6 +100,15 @@ function renderPresetButtons() {
   const mk = (label, on, fn) => { const b = document.createElement('button'); b.textContent = label; if (on) b.className = 'on'; b.onclick = fn; wrap.appendChild(b); };
   mk(`Auto (${PRESETS[detected.tier].name})`, !manual, () => { manual = false; try { localStorage.removeItem('sunbell.quality'); } catch {} applyQuality(detected.tier); });
   for (const k of ORDER) mk(PRESETS[k].name, manual && tier === k, () => { manual = true; try { localStorage.setItem('sunbell.quality', k); } catch {} applyQuality(k); });
+  // resolution row (added once, under the presets)
+  let rw = $('#resrow');
+  if (!rw) { rw = document.createElement('div'); rw.id = 'resrow'; rw.className = 'row'; wrap.after(rw); }
+  rw.innerHTML = '';
+  for (const [k, label] of [['auto', 'Resolution: Auto'], ['sharp', 'Sharp'], ['native', 'Native (sharpest)']]) {
+    const b = document.createElement('button'); b.textContent = label; if (resMode === k) b.className = 'on';
+    b.onclick = () => { resMode = k; try { localStorage.setItem('sunbell.res', k); } catch {} drs.scale = 1; applySize(); renderPresetButtons(); };
+    rw.appendChild(b);
+  }
   const cw = $('#herochoice');
   cw.innerHTML = '';
   for (const [k, label] of [['heroine', 'Heroine'], ['warden', 'Warden']]) {
@@ -135,7 +147,7 @@ function perfWatch(dt) {
     const fps = perf.frames / perf.acc;
     perf.frames = 0; perf.acc = 0;
     const i = ORDER.indexOf(tier);
-    if (!manual && fps < 33 && drs.scale <= 0.61 && i > 0 && perf.steps < 2) {
+    if (!manual && fps < 33 && drs.scale <= 0.71 && i > 0 && perf.steps < 2) {
       perf.steps++;
       applyQuality(ORDER[i - 1], `Graphics lowered to ${PRESETS[ORDER[i - 1]].name} to keep things smooth`);
       perf.t = perf.warm - 3;

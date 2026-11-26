@@ -2,22 +2,22 @@
 
 export const PRESETS = {
   low: {
-    name: 'Low', renderScale: 0.75, maxDpr: 1, shadowSize: 1024, shadowRange: 32,
+    name: 'Low', renderScale: 0.9, maxDpr: 1.25, shadowSize: 1024, shadowRange: 32,
     ao: false, aoSamples: 0, fogSteps: 12, fogScale: 0.25, dof: false, dofSamples: 0,
     bloomLevels: 4, grass: 6000, treeShadows: false, grassDist: 80, fogDist: 340,
   },
   medium: {
-    name: 'Medium', renderScale: 0.85, maxDpr: 1, shadowSize: 2048, shadowRange: 40,
+    name: 'Medium', renderScale: 1, maxDpr: 1.5, shadowSize: 2048, shadowRange: 40,
     ao: true, aoSamples: 8, fogSteps: 20, fogScale: 0.25, dof: false, dofSamples: 0,
     bloomLevels: 5, grass: 22000, treeShadows: true, grassDist: 115, fogDist: 420,
   },
   high: {
-    name: 'High', renderScale: 1, maxDpr: 1.5, shadowSize: 2048, shadowRange: 48,
+    name: 'High', renderScale: 1, maxDpr: 2, shadowSize: 2048, shadowRange: 48,
     ao: true, aoSamples: 12, fogSteps: 32, fogScale: 0.5, dof: true, dofSamples: 24,
     bloomLevels: 6, grass: 40000, treeShadows: true, grassDist: 150, fogDist: 520,
   },
   ultra: {
-    name: 'Ultra', renderScale: 1, maxDpr: 2, shadowSize: 4096, shadowRange: 56,
+    name: 'Ultra', renderScale: 1, maxDpr: 3, shadowSize: 4096, shadowRange: 56,
     ao: true, aoSamples: 16, fogSteps: 48, fogScale: 0.5, dof: true, dofSamples: 40,
     bloomLevels: 6, grass: 60000, treeShadows: true, grassDist: 210, fogDist: 640,
   },
