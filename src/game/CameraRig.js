@@ -19,7 +19,16 @@ export class CameraRig {
     this.cinematic = null; // { from, to, t, dur, look }
   }
 
-  addShake(a) { this.trauma = Math.min(1, this.trauma + a); }
+  /** Trauma shake; with a direction (world vector) the camera is also kicked away from the impact. */
+  addShake(a, dir) {
+    this.trauma = Math.min(1, this.trauma + a);
+    if (dir) { (this.kick ||= new THREE.Vector3()).addScaledVector(dir.clone().setY(0).normalize(), a * 0.35); }
+  }
+  applyKick(dt) {
+    if (!this.kick) return;
+    this.camera.position.add(this.kick);
+    this.kick.multiplyScalar(Math.exp(-14 * dt));
+  }
 
   update(dt, input, hero, target, collider) {
     const cam = this.camera;
@@ -75,6 +84,7 @@ export class CameraRig {
     cam.rotateZ(Math.sin(t * 37) * 0.02 * s);
     cam.rotateX(Math.sin(t * 41 + 1) * 0.015 * s);
     cam.rotateY(Math.sin(t * 29 + 2) * 0.015 * s);
+    this.applyKick(dt);
 
     const wantFov = this.zoomFov || (hero.sprinting ? 60 : 55);
     this.fov = damp(this.fov, wantFov, this.zoomFov ? 12 : 4, dt);

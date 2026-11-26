@@ -280,7 +280,8 @@ export class Zombie {
       this.armRest[sd] = a && b ? Math.atan2(-(b[0] - a[0]), -(b[1] - a[1])) : (sd === 'R' ? 0.35 : -0.35);
     }
     this.object = g;
-    this.object.scale.setScalar(rnd(0.95, 1.06));
+    this.baseScale = rnd(0.95, 1.06); this.squash = 0;
+    this.object.scale.setScalar(this.baseScale);
     scene.add(g);
   }
 
@@ -343,7 +344,7 @@ export class Zombie {
   takeHit(dmg, fromPos, events, opts = {}) {
     if (!this.alive) return false;
     this.hp -= dmg;
-    this.flash = 1;
+    this.flash = 1; this.squash = 1;
     const away = new THREE.Vector3(this.pos.x - fromPos.x, 0, this.pos.z - fromPos.z);
     if (away.lengthSq() < 1e-6) away.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).negate();
     away.normalize();
@@ -475,6 +476,12 @@ export class Zombie {
     o.position.copy(this.pos);
     o.rotation.y = this.yaw;
     this.mat.userData.flash.value = this.flash;
+    // squash and stretch on impact: flattens, then springs back taller
+    if (this.squash > 0.001) {
+      this.squash = Math.max(0, this.squash - dt * 5);
+      const k = Math.sin((1 - this.squash) * Math.PI * 1.5) * this.squash * 0.16;
+      o.scale.set(this.baseScale * (1 + k), this.baseScale * (1 - k), this.baseScale * (1 + k));
+    } else o.scale.setScalar(this.baseScale);
     const G = this.g, S = this.style;
     const spd = Math.hypot(this.vel.x, this.vel.z);
     const la = clamp(spd / 1.4, 0, 1.3);

@@ -281,7 +281,7 @@ export class Hero {
     if (this.hurtDir.lengthSq() < 1e-6) this.hurtDir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     this.hurtDir.normalize();
     if (opts.knock) this.vel.addScaledVector(this.hurtDir, opts.knock);
-    events.push({ type: 'hurt', dmg });
+    events.push({ type: 'hurt', dmg, dir: this.hurtDir.clone() });
     if (this.hp <= 0) { this.hp = 0; this.state = 'dead'; this.stateT = 0; events.push({ type: 'death' }); }
     else { this.state = 'hurt'; this.stateT = 0; this.iframes = 0.3; }
     return 'hit';

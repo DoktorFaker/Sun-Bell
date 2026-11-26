@@ -72,6 +72,7 @@ export class Game {
     this.gunState = { ak: { ammo: GUNS.ak.mag, reloadT: 0 }, sniper: { ammo: GUNS.sniper.mag, reloadT: 0 } };
     this.gunFireT = 0; this.turretT = 0;
     this.boomLight = new THREE.PointLight(new THREE.Color(1, 0.6, 0.25), 0, 30, 2); this.scene.add(this.boomLight);
+    this.flashLight = new THREE.PointLight(new THREE.Color(1, 0.72, 0.35), 0, 12, 2); this.scene.add(this.flashLight);
     this.spawnPickups();
     // footsteps: dust on dry ground, splashes and ripples in the shallows
     this.ripples = [];
@@ -252,6 +253,8 @@ export class Game {
       this.smoke.update(gdt);
       this.tracers.update(gdt);
       this.boomLight.intensity = Math.max(0, this.boomLight.intensity - gdt * 900);
+      this.flashLight.intensity = Math.max(0, this.flashLight.intensity - gdt * 900);
+      if (this.pickupMeshes) for (const gm of this.pickupMeshes) { gm.rotation.y += gdt * 0.8; gm.position.y = 0.75 + Math.sin(performance.now() * 0.003) * 0.08; }
       this.handleEvents(events);
       if (!this.inHeli && !this.inTruck) this.interactions(input); else this.ui.prompt.classList.add('hidden');
       this.story();
@@ -336,6 +339,7 @@ export class Game {
     const h = hitscan(origin, dir, opts.range || 300, this.enemies, this.world.collider);
     const end = h ? h.point : origin.clone().addScaledVector(dir, opts.range || 300);
     this.tracers.add(tracerFrom || origin, end);
+    this.flashLight.position.copy(tracerFrom || origin); this.flashLight.intensity = 45;
     if (!h) return null;
     if (h.enemy) {
       const e = h.enemy;
@@ -348,6 +352,7 @@ export class Game {
         this.sparks.burst(h.point, 8, new THREE.Color(6, 2.6, 0.8), 4, 1);
       }
       this.ui.crosshairHit = 0.15;
+      this.hitstop = Math.max(this.hitstop, h.part === 'head' ? 0.05 : 0.03);   // a tiny freeze sells the hit
     } else {
       this.sparks.burst(h.point.clone().addScaledVector(dir, -0.05), 4, new THREE.Color(3, 2.4, 1.4), 3, 1);
       this.smoke.puff(h.point, 1, 0.5, 0.2, 0.4, 0.8);
@@ -402,7 +407,7 @@ export class Game {
     this.boomLight.position.copy(pos).y += 1.5; this.boomLight.intensity = 600;
     GORE.splat(pos.x, groundHeight(pos.x, pos.z), pos.z, 1.6);
     const dh = pos.distanceTo(this.hero.pos);
-    this.rig.addShake(Math.max(0.1, 1 - dh / 60));
+    this.rig.addShake(Math.max(0.1, 1 - dh / 60), this.hero.pos.clone().sub(pos));
     for (const e of this.enemies) {
       if (!e.alive) continue;
       const d = e.lockPoint.distanceTo(pos);
@@ -444,6 +449,7 @@ export class Game {
       const gun = makeGunMesh(sp.kind); gun.position.set(0, 0.6, -0.1); gun.rotation.set(0, Math.PI / 2, Math.PI / 2 - 0.1); g.add(gun);
       const glow = new THREE.PointLight(new THREE.Color(1, 0.8, 0.4), 4, 4, 2); glow.position.y = 1; g.add(glow);
       this.scene.add(g);
+      (this.pickupMeshes ||= []).push(gun);
       const it = { type: 'pickup', position: g.position.clone(), radius: 2.2, prompt: `Pick up the ${GUNS[sp.kind].name}` };
       it.onUse = () => {
         this.hero.guns.add(sp.kind); this.hero.equip(sp.kind);
@@ -709,7 +715,7 @@ export class Game {
   handleEvents(events) {
     for (const ev of events) {
       switch (ev.type) {
-        case 'hurt': this.sfx.hurt(); this.rig.addShake(0.5); this.pipeline.params.hurt = 0.55; this.hitstop = 0.05; break;
+        case 'hurt': this.sfx.hurt(); this.rig.addShake(0.5, ev.dir); this.pipeline.params.hurt = 0.55; this.hitstop = 0.05; break;
         case 'block': this.sfx.block(); this.rig.addShake(0.2); this.sparks.burst(this.hero.centre.clone().add(new THREE.Vector3(Math.sin(this.hero.yaw) * 0.5, 0, Math.cos(this.hero.yaw) * 0.5)), 18, new THREE.Color(5, 4, 2.5), 4, 1); break;
         case 'guardbreak': this.sfx.hurt(); this.toast('Guard broken', true, 1.2); this.rig.addShake(0.5); break;
         case 'dodge': break;
@@ -750,7 +756,7 @@ export class Game {
           if (!this.flags.firstKill) { this.flags.firstKill = true; this.queueSubs([['The husk crumbles to ash. A faint warmth lingers where it stood.', 4]]); }
           break;
         }
-        case 'sever': this.sfx.gore(); this.rig.addShake(0.15); break;
+        case 'sever': this.sfx.gore(); this.rig.addShake(0.15); this.hitstop = Math.max(this.hitstop, 0.04); break;
         case 'explosion': this.explode(ev.pos, ev.radius, ev.dmg, events); break;
         case 'rocket-launch': this.sfx.whoosh(); this.rig.addShake(0.12); this.smoke.puff(ev.pos, 6, 0.6, 0.8, 0.5, 1.4); break;
         case 'truck-wrecked': this.toast('The truck is wrecked — get out and repair it', true, 2.6); this.sfx.crash(); break;
@@ -946,6 +952,10 @@ export class Game {
     const G = gun && GUNS[gun], st = gun && this.gunState[gun];
     const scoped = gun === 'sniper' && this.hero.aiming;
     $('#crosshair').classList.toggle('hidden', !gun || scoped);
+    this.ui.crosshairHit = Math.max(0, (this.ui.crosshairHit || 0) - 1 / 60);
+    $('#crosshair').classList.toggle('hit', this.ui.crosshairHit > 0);
+    // vignette tightens and pulses when badly hurt
+    { const low = 1 - Math.min(1, this.hero.hp / 35); this.pipeline.params.vignette = 0.45 + low * (0.35 + 0.15 * Math.sin(performance.now() * 0.006)); }
     $('#scope').classList.toggle('hidden', !scoped);
     const ammoEl = $('#ammo');
     ammoEl.classList.toggle('hidden', !gun);

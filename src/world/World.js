@@ -3,6 +3,7 @@ import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferG
 import { MeshBVH } from 'three-mesh-bvh';
 import { heightAt, roadX, roadY, roadDist, slopeAt, fbm, rng, CAMP, TEMPLE, HELIPAD, ROAD_START, ROAD_END, riverZ, WATER, BRIDGE, TRUCK } from './terrain.js';
 import { M, makeMaterials, makeSky, windTime } from './materials.js';
+import { Fire } from './fx.js';
 import { generateTextures, TEX } from './textures.js';
 import { updateWind, gustAt, WIND } from './wind.js';
 import { FallingLeaves } from './leaves.js';
@@ -58,6 +59,7 @@ export class World {
     this.buildRocks(cb);
     this.buildTrees(cb);
     this.buildWaystones(cb);
+    this.buildRidges();
     this.buildRiver();
     this.buildShed(cb);
     const camp = buildCamp(this, cb);
@@ -639,14 +641,41 @@ export class World {
       const a = new THREE.Mesh(post, M.stone), b = new THREE.Mesh(cap, M.stoneDark), c = new THREE.Mesh(gem, M.crystal);
       a.castShadow = b.castShadow = true; a.receiveShadow = true;
       g.add(a, b, c);
+      // a small flame on every other lantern stone: warm pools of light along the road
+      if ((this._torchN = (this._torchN || 0) + 1) % 2 === 0) {
+        const f = new Fire(0.28, 5, 11);
+        f.group.position.y = 1.86; g.add(f.group); this.flames.push(f); c.visible = false;
+      }
       this.scene.add(g);
       g.updateMatrixWorld(true);
       cb.addMesh(a);
     }
   }
 
+  /** Distant ridges in layers, each one paler and bluer (aerial perspective), so the valley has depth. */
+  buildRidges() {
+    const layers = [[560, 0x56604f, 70, 1], [820, 0x7a8790, 120, 2], [1150, 0x9fb0bd, 180, 3]];
+    for (const [R, col, H, seed] of layers) {
+      const n = 160, pos = [], idx = [];
+      for (let i = 0; i <= n; i++) {
+        const a = i / n * Math.PI * 2;
+        const h = H * (0.45 + 0.35 * Math.sin(a * 3 + seed) * Math.sin(a * 7.3 + seed * 2) + 0.2 * Math.abs(Math.sin(a * 17 + seed * 5)));
+        pos.push(Math.sin(a) * R, -40, Math.cos(a) * R, Math.sin(a) * R, h, Math.cos(a) * R);
+        if (i < n) { const k = i * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, fog: false }));
+      m.renderOrder = -1;
+      this.scene.add(m);
+      (this.ridges ||= []).push(m);
+    }
+  }
+
   update(dt, t) {
     windTime.value = t;
+    // the far ridges follow the camera sideways a little less than they should: a gentle parallax
+    if (this.ridges && this.camera) this.ridges.forEach((r, i) => { r.position.x = this.camera.position.x * (0.15 + i * 0.25); r.position.z = this.camera.position.z * (0.15 + i * 0.25); });
     updateWind(t);
     if (this.leaves && this.camera) this.leaves.update(dt, this.camera.position);
     // grass is drawn out to a distance that fits the quality preset (the rest of the valley still renders)
