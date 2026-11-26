@@ -105,8 +105,8 @@ export class Base {
       triplanar(iron, { tex: TEX.iron, scale: 1.4, normalScale: 1.2 });
     }
     this.carried = { wood: 0, stone: 0 };
-    this.stored = { wood: 12, stone: 6 };
-    this.capacity = 20;
+    this.stored = { wood: 30, stone: 20 };
+    this.capacity = 60;
     this.structures = [];
     this.building = false;
     this.type = 'wall';
@@ -151,7 +151,7 @@ export class Base {
 
   // ---------------- gathering ----------------
   /** Called once per sword swing while the blade is live. Returns true if it struck a tree or rock. */
-  tryHarvest(hero, events) {
+  tryHarvest(hero, events, anyFacing = false) {
     const fx = Math.sin(hero.yaw), fz = Math.cos(hero.yaw);
     let best = null, bestD = 2.6;
     for (const h of this.world.harvest) {
@@ -161,19 +161,19 @@ export class Base {
       const reach = h.kind === 'rock' ? 1.0 + h.size * 0.9 : 1.5;
       const d = Math.hypot(dx, dz) - reach + 1.2;
       if (d > bestD) continue;
-      if ((dx * fx + dz * fz) < 0) continue;
+      if (!anyFacing && (dx * fx + dz * fz) < 0) continue;
       best = h; bestD = d;
     }
     if (!best) return false;
     if (this.carriedTotal >= this.capacity) {
-      this.game.toast('Backpack full — carry it to the stockpile at camp', true, 1.8);
+      this.game.toast('Backpack full — build with B, or walk back to camp to store it', true, 1.8);
       return true;
     }
     const h = best;
     h.left--;
     const hitPos = h.pos.clone().setY(h.pos.y + (h.kind === 'tree' ? 1.2 : h.size * 0.5));
     if (h.kind === 'tree') {
-      const n = Math.min(2, this.capacity - this.carriedTotal);
+      const n = Math.min(5, this.capacity - this.carriedTotal);
       this.carried.wood += n;
       events.push({ type: 'sparks', pos: hitPos, n: 14, color: [0.9, 0.6, 0.3], speed: 3 });
       this.game.sfx.chop();
@@ -181,7 +181,7 @@ export class Base {
       h.shake = 1;
       if (h.left <= 0) this.fell(h);
     } else {
-      const n = Math.min(2, this.capacity - this.carriedTotal);
+      const n = Math.min(4, this.capacity - this.carriedTotal);
       this.carried.stone += n;
       events.push({ type: 'sparks', pos: hitPos, n: 12, color: [3, 2.8, 2.4], speed: 4 });
       this.game.sfx.clink();
@@ -193,7 +193,7 @@ export class Base {
     }
     if (!this.game.flags.gatherHelp) {
       this.game.flags.gatherHelp = true;
-      this.game.queueSubs([['Good timber. Carry it back to the stockpile at camp — the fort is built from what you store there. Press B to build.', 5]]);
+      this.game.queueSubs([['Good timber. Press B to build right away — your backpack counts. Walk back into camp and it is stored by itself.', 5]]);
     }
     return true;
   }
@@ -250,7 +250,14 @@ export class Base {
     return new THREE.Box3().setFromObject(g);
   }
 
-  canAfford(t) { const b = BLUEPRINTS[t]; return this.stored.wood >= b.wood && this.stored.stone >= b.stone; }
+  /** Everything you have counts: what is stored at camp plus what is in the backpack. */
+  canAfford(t) { const b = BLUEPRINTS[t] || t; return this.stored.wood + this.carried.wood >= b.wood && this.stored.stone + this.carried.stone >= b.stone; }
+  spend(b) {
+    for (const k of ['wood', 'stone']) {
+      const fromStore = Math.min(this.stored[k], b[k]);
+      this.stored[k] -= fromStore; this.carried[k] -= b[k] - fromStore;
+    }
+  }
 
   updateBuild(dt, input, hero, camYaw) {
     const p = input.pressed;
@@ -308,7 +315,7 @@ export class Base {
 
   placeBridge() {
     const b = BLUEPRINTS.bridge;
-    this.stored.wood -= b.wood; this.stored.stone -= b.stone;
+    this.spend(b);
     const mesh = makeMesh('bridge');
     mesh.position.set(BRIDGE.x, 0, BRIDGE.z);
     mesh.rotation.y = BRIDGE.yaw;
@@ -339,7 +346,7 @@ export class Base {
 
   place(type, x, y, z, rot) {
     const b = BLUEPRINTS[type];
-    this.stored.wood -= b.wood; this.stored.stone -= b.stone;
+    this.spend(b);
     const mesh = makeMesh(type);
     mesh.position.set(x, y, z); mesh.rotation.y = rot * Math.PI / 2;
     this.scene.add(mesh);
@@ -347,7 +354,7 @@ export class Base {
     const s = { type, mesh, box: new THREE.Box3().setFromObject(mesh), hp: b.hp, max: b.hp, cool: 0, shake: 0, pos: new THREE.Vector3(x, y, z) };
     if (type === 'cannon') { s.turret = mesh.getObjectByName('turret'); s.pitch = mesh.getObjectByName('pitch'); s.muzzle = mesh.getObjectByName('muzzle'); }
     if (type === 'trap') s.spikes = mesh.getObjectByName('spikes');
-    if (type === 'house') { this.capacity += 15; this.hearth.max += 100; this.hearth.hp += 100; this.game.toast('House built · backpack +15 · hearth stronger', true, 2.4); }
+    if (type === 'house') { this.capacity += 30; this.hearth.max += 100; this.hearth.hp += 100; this.game.toast('House built · backpack +30 · hearth stronger', true, 2.4); }
     this.structures.push(s);
     this.game.sfx.place();
     this.game.sparks.burst(new THREE.Vector3(x, y + 0.3, z), 20, new THREE.Color(0.6, 0.5, 0.35), 3, 1);
@@ -370,7 +377,7 @@ export class Base {
         for (const e of this.game.enemies) if (e.alive && deepWater(e.pos.x, e.pos.z)) e.takeHit(99, e.pos.clone().setY(e.pos.y + 1), this.game.events);
         this.game.queueSubs([['The bridge is down! Rebuild it at the crossing (B, then 6).', 3.5]]);
       }
-      if (s.type === 'house') { this.capacity -= 15; this.hearth.max -= 100; this.hearth.hp = Math.min(this.hearth.hp, this.hearth.max); }
+      if (s.type === 'house') { this.capacity -= 30; this.hearth.max -= 100; this.hearth.hp = Math.min(this.hearth.hp, this.hearth.max); }
       this.game.toast(`${BLUEPRINTS[s.type].name} destroyed!`, true, 1.6);
     }
   }

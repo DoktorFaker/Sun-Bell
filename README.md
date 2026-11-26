@@ -40,8 +40,8 @@ The truck and helicopter are built from `tools/sheets/truck.jpg` and `heli.jpg` 
 Pause menu → **Character**: *Heroine* (the VRM Studio "Base Female" model, `public/models/heroine.glb`) or *Warden* (the procedural hero). The heroine is driven by the warden's animation rig, with her feet re-planted by IK. To swap in another VRM Studio character: export **File → Export MMD model**, then run `python3 tools/pmx2glb.py Base_Female.pmx public/models/heroine.glb`.
 
 ## Fortify the camp (level 1)
-- **Gather:** swing your sword at trees (2 wood per hit; a tree falls after 3 hits and leaves a stump) and rocks (2 stone per hit). Your backpack holds 20 (each house adds 15).
-- **Carry:** bring it to the **stockpile** (log pile by the tent) and press **E**. You can only build with stored supplies.
+- **Gather:** stand next to a tree or rock and press **E** (or swing your sword at it): 5 wood or 4 stone per hit. Your backpack holds 60 (each house adds 30). You start with 30 wood and 20 stone stored.
+- **Store:** just walk back into camp, it unloads by itself. You can also build straight from the backpack: stored and carried supplies both count.
 - **Build:** press **B**. Choose with **1–5** or the mouse wheel, rotate with **R**, place with **LMB**. Building is allowed within 70 m of the camp.
 
 | | Cost | What it does |

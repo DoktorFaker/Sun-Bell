@@ -692,7 +692,7 @@ export class Game {
     }
     if (!hero.isAttackActive()) return;
     if (!hero.attackHits.has('puzzle') && this.puzzles.trySwing(hero)) hero.attackHits.add('puzzle');
-    if (!hero.attackHits.has('harvest') && this.base.tryHarvest(hero, events)) hero.attackHits.add('harvest');
+    if (!hero.attackHits.has('harvest') && this.base.tryHarvest(hero, events, true)) hero.attackHits.add('harvest');
     const a = hero.attack;
     for (const e of this.enemies) {
       if (!e.alive || hero.attackHits.has(e)) continue;
@@ -784,6 +784,17 @@ export class Game {
     for (const it of this.world.interactables) {
       if (it.position.distanceTo(hero.pos) < it.radius + 0.5 && Math.abs(it.position.y - hero.pos.y) < 2.5) { near = it; break; }
     }
+    // walking into camp stores the backpack by itself
+    if (this.base.carriedTotal > 0 && (hero.pos.distanceTo(this.base.stockpile) < 9 || hero.pos.distanceTo(this.base.hearth.pos) < 9)) {
+      const c = this.base.carried;
+      this.floatText(`Stored ${c.wood ? c.wood + ' wood ' : ''}${c.stone ? c.stone + ' stone' : ''}`, this.base.stockpile.clone().setY(this.base.stockpile.y + 1.5));
+      this.base.stored.wood += c.wood; this.base.stored.stone += c.stone; c.wood = c.stone = 0; this.sfx.place();
+    }
+    // next to a tree or rock: E (or any weapon) gathers
+    if (!near) {
+      const h = this.world.harvest.find((q) => q.left > 0 && Math.hypot(q.pos.x - hero.pos.x, q.pos.z - hero.pos.z) < (q.kind === 'rock' ? 1.6 + q.size * 0.9 : 2.2));
+      if (h) near = { type: 'gather', position: hero.pos, radius: 9, prompt: h.kind === 'tree' ? 'Chop wood' : 'Break stone' };
+    }
     const canAct = near && hero.state === 'move' && this.mode === 'play';
     this.ui.prompt.classList.toggle('hidden', !canAct);
     if (canAct) {
@@ -795,12 +806,19 @@ export class Game {
 
   interact(it) {
     if (it.onUse) { it.onUse(); return; }
+    if (it.type === 'gather') {
+      const ev = [];
+      if (this.hero.gun) this.base.tryHarvest(this.hero, ev, true);
+      else if (this.hero.state === 'move') { this.hero.startAttack(0, null); }
+      this.handleEvents(ev);
+      return;
+    }
     this.sfx.ui();
     if (it.type === 'rest') this.rest();
     if (it.type === 'heli') {
       if (this.heli.disabled) {
         const s = this.base.stored;
-        if (s.wood >= REPAIR_COST.wood && s.stone >= REPAIR_COST.stone) { s.wood -= REPAIR_COST.wood; s.stone -= REPAIR_COST.stone; this.heli.repair(); this.sfx.place(); this.toast('The helicopter is patched up', false, 2.2); }
+        if (this.base.canAfford(REPAIR_COST)) { this.base.spend(REPAIR_COST); this.heli.repair(); this.sfx.place(); this.toast('The helicopter is patched up', false, 2.2); }
         else this.toast(`Repairs need ${REPAIR_COST.wood} wood and ${REPAIR_COST.stone} stone stored at camp`, true, 2.4);
       } else { this.base.toggleBuild(false); this.enterHeli(); }
     }
@@ -810,8 +828,8 @@ export class Game {
       const tr = this.truck;
       if (tr.broken) {
         const s = this.base.stored;
-        if (s.wood >= REPAIR_COST.wood && s.stone >= REPAIR_COST.stone) {
-          s.wood -= REPAIR_COST.wood; s.stone -= REPAIR_COST.stone;
+        if (this.base.canAfford(REPAIR_COST)) {
+          this.base.spend(REPAIR_COST);
           tr.repair(); this.sfx.place(); this.toast('The old truck coughs back to life!', false, 2.4);
           this.queueSubs([['Drive it to the woods. Walk up to the truck to load your backpack — it unloads itself at the stockpile.', 5]]);
         } else this.toast(`Repairs need ${REPAIR_COST.wood} wood and ${REPAIR_COST.stone} stone stored at camp`, true, 2.4);
