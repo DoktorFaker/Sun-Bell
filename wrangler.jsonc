@@ -1,0 +1,6 @@
+{
+  // Publishes the built game (dist/) as a Cloudflare Worker with static assets.
+  "name": "sun-bell",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }
+}

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Sun Bell" />
+<meta name="theme-color" content="#000000" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<title>The Sun Bell</title>
+<link rel="icon" href="./icon-192.png" />
+<link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="bars">
+    <div class="bar hp"><div class="fill"></div><div class="lag"></div></div>
+    <div class="bar st"><div class="fill"></div></div>
+    <div id="flasks" title="Sunwater flasks (R)"></div>
+  </div>
+  <div id="objective"><span class="label">Objective</span><span class="text"></span></div>
+  <div id="compass"><div class="strip"></div><div class="mark" title="Temple"></div></div>
+  <div id="prompt" class="hidden"><kbd>E</kbd><span></span></div>
+  <div id="subtitle"></div>
+  <div id="toast"></div>
+  <div id="reticle" class="hidden"><div></div></div>
+  <div id="fps" class="hidden"></div>
+  <div id="bubbles"></div>
+  <div id="boss" class="hidden"><span>The Hollow King</span><div class="bar"><div class="fill"></div></div></div>
+  <div id="res"></div>
+  <div id="raid"></div>
+  <div id="buildbar" class="hidden"></div>
+  <div id="buildhint" class="hidden"></div>
+  <div id="truck" class="hidden"><span></span></div>
+  <div id="heli" class="hidden">
+    <div class="cross"></div>
+    <div class="readout"><span class="alt"></span><span class="gun"></span></div>
+  </div>
+</div>
+
+<div id="title" class="screen">
+  <div class="inner">
+    <div class="sun"></div>
+    <h1>The Sun Bell</h1>
+    <p class="sub">A warden's tale</p>
+    <button id="start" disabled>Loading…</button>
+    <div class="controls">
+      <div><kbd>WASD</kbd> move &nbsp; <kbd>Shift</kbd> sprint &nbsp; <kbd>Space</kbd> roll</div>
+      <div><kbd>LMB</kbd> attack (chain 3) &nbsp; <kbd>RMB</kbd> shield &nbsp; <kbd>Q</kbd>/<kbd>MMB</kbd> lock on &nbsp; <kbd>Tab</kbd>/wheel switch</div>
+      <div><kbd>B</kbd> build (<kbd>1</kbd>–<kbd>5</kbd> choose, <kbd>R</kbd> rotate, <kbd>LMB</kbd> place) &nbsp; swing at trees &amp; rocks to gather</div>
+      <div><kbd>E</kbd> interact &nbsp; <kbd>R</kbd> drink sunwater &nbsp; <kbd>Esc</kbd> pause &amp; graphics</div>
+      <div>Truck: <kbd>E</kbd> repair/drive &nbsp; <kbd>WASD</kbd> drive &nbsp; <kbd>Space</kbd> brake &nbsp; river: build a bridge with <kbd>B</kbd> → <kbd>6</kbd></div>
+      <div>Helicopter: <kbd>E</kbd> board/exit &nbsp; <kbd>WASD</kbd> fly &nbsp; <kbd>Space</kbd>/<kbd>Shift</kbd> up/down &nbsp; hold <kbd>LMB</kbd> fire (low altitude only)</div>
+      <div class="touchhelp">Left thumb: move (push to the edge to sprint) · right thumb: drag to look<br>⚔ attack · ⤼ roll · 🛡 shield · ◎ lock on · Use · ✚ heal · ⌂ build · ⇆ next<br>Helicopter: hold ⤼ up, 🛡 down, ⚔ fire · Truck: hold ⤼ to brake<br><small>iPhone: tap Share → Add to Home Screen to play full screen</small></div>
+      <div class="pad">Controller: LS move · RS camera · RB attack · LB block · B roll (hold: sprint) · R3 lock · A interact · X heal</div>
+    </div>
+    <p id="gpuline" class="gpu"></p>
+  </div>
+</div>
+
+<div id="pause" class="screen hidden">
+  <div class="inner panel">
+    <h2>Paused</h2>
+    <button id="resume">Resume</button>
+    <h3>Character</h3>
+    <div id="herochoice" class="row"></div>
+    <h3>Graphics</h3>
+    <div id="presets" class="row"></div>
+    <p id="gpuinfo" class="gpu"></p>
+    <label class="row slider">Mouse sensitivity <input id="sens" type="range" min="0.5" max="3" step="0.1" value="1" /></label>
+    <label class="row check"><input id="showfps" type="checkbox" /> Show FPS</label>
+  </div>
+</div>
+
+<div id="death" class="screen hidden"><h1>You fell</h1><p>The ember of the warden rekindles at camp…</p></div>
+<div id="fade"></div>
+<div id="rotate"><div class="phone"></div><p>Turn your phone sideways to play</p></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
