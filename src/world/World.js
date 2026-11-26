@@ -64,7 +64,7 @@ export class World {
     this.camp = camp;
     const temple = buildTemple(this, cb);
     this.temple = temple;
-    this.setGrass(quality.grass);
+    this.setGrass(quality.grass, quality.grassDist);
     this.buildPlants(quality);
     this.leaves = new FallingLeaves(this.scene, this.leafSources, quality.renderScale < 0.8 ? 120 : 280);
 
@@ -392,7 +392,8 @@ export class World {
     for (const t of this.trees) t.castShadow = this.quality.treeShadows;
   }
 
-  setGrass(count) {
+  setGrass(count, dist) {
+    if (dist) this.grassDist = dist;
     if (this.grass) { this.grass.forEach((g) => { this.scene.remove(g); g.geometry.dispose(); }); this.grass = null; }
     if (!count) return;
     const cardGrass = !!BRANCH.grass;
@@ -648,6 +649,14 @@ export class World {
     windTime.value = t;
     updateWind(t);
     if (this.leaves && this.camera) this.leaves.update(dt, this.camera.position);
+    // grass is drawn out to a distance that fits the quality preset (the rest of the valley still renders)
+    if (this.grass && this.camera) {
+      const cp = this.camera.position, D = this.grassDist || 150;
+      for (const g of this.grass) {
+        const bs = g.boundingSphere; if (!bs) continue;
+        g.visible = bs.center.distanceTo(cp) - bs.radius < D;
+      }
+    }
     for (const f of this.flames) f.update(dt, t);
   }
 }

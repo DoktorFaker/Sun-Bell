@@ -42,7 +42,7 @@ export class Pipeline {
 
     // Look-dev parameters (tweakable at runtime)
     this.params = {
-      fogDensity: 0.0055, fogFalloff: 0.05, fogBase: 0, fogMaxDist: 260, fogAniso: 0.62,
+      fogDensity: 0.0034, fogFalloff: 0.05, fogBase: 0, fogMaxDist: 420, fogAniso: 0.62,
       fogSun: 9, fogAmbient: new THREE.Color(0.05, 0.056, 0.072),
       aoRadius: 1.4, aoIntensity: 1.1, aoStrength: 0.9,
       bloom: 0.07, bloomThreshold: 1.6, bloomKnee: 0.8, bloomRadius: 1.0,
@@ -53,7 +53,7 @@ export class Pipeline {
       gain: new THREE.Vector3(1.04, 1.0, 0.95),
       tint: new THREE.Vector3(1.03, 1.0, 0.96),
       vignette: 0.45, grain: 0.025,
-      dofFocusRange: 6, dofFarRange: 70, dofMaxRadius: 7,
+      dofFocusRange: 8, dofFarRange: 160, dofMaxRadius: 4,
       fade: 0, fadeColor: new THREE.Vector3(0, 0, 0), hurt: 0,
     };
     this.lumTargets = [rt(64, 64, { filter: THREE.LinearFilter }), rt(16, 16), rt(4, 4), rt(1, 1)];
@@ -62,6 +62,7 @@ export class Pipeline {
 
   configure(preset, width, height) {
     this.preset = preset;
+    if (preset.fogDist) this.params.fogMaxDist = preset.fogDist;
     this.width = width; this.height = height;
     this.dispose();
     const W = Math.max(2, Math.round(width * preset.renderScale));

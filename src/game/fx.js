@@ -133,6 +133,28 @@ export class Sfx {
   swing() { this._noise(0.22, 'bandpass', 900, 1.5, 0.35, 2600); }
   groan(gain = 0.22) { const f = 70 + Math.random() * 40; this._tone(f, 1.1, gain, 'sawtooth', f * 0.7); this._tone(f * 1.51, 0.9, gain * 0.4, 'sawtooth', f * 1.1); this._noise(0.9, 'bandpass', 380, 3, gain * 0.8, 250); }
   gore() { this._noise(0.28, 'lowpass', 700, 0.9, 0.9, 120); this._noise(0.12, 'bandpass', 1600, 1.2, 0.35, 500); this._tone(80, 0.18, 0.35, 'sine', 40); }
+  /** Zombie voice lines through the browser's speech voices: slow, low and rough. */
+  speak(text, female, volume = 1) {
+    const ss = window.speechSynthesis;
+    if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return;
+    try {
+      const voices = ss.getVoices();
+      const en = voices.filter((v) => /^en/i.test(v.lang));
+      const pool = en.length ? en : voices;
+      const fem = /female|woman|samantha|victoria|zira|karen|moira|tessa|fiona|susan|serena|allison|ava|kate|libby|sonia|jenny|aria/i;
+      const mal = /male|man|daniel|alex|david|fred|george|ryan|guy|arthur|oliver|thomas|mark|james/i;
+      const pick = pool.find((v) => (female ? fem : mal).test(v.name) && !(female ? /\bmale\b/i : /female|woman/i).test(v.name)) || pool[0];
+      const u = new SpeechSynthesisUtterance(text);
+      if (pick) u.voice = pick;
+      u.pitch = female ? 0.55 : 0.1;
+      u.rate = female ? 0.78 : 0.72;
+      u.volume = Math.max(0.15, Math.min(1, volume));
+      ss.cancel();
+      ss.speak(u);
+      // a wet growl under the words
+      this._tone(female ? 120 : 70, 1.1, 0.12 * volume, 'sawtooth', female ? 90 : 50);
+    } catch (e) { /* no voices on this device */ }
+  }
   hit() { this._noise(0.18, 'lowpass', 1800, 0.7, 0.8, 200); this._tone(110, 0.2, 0.5, 'triangle', 50); }
   block() { this._tone(1250, 0.4, 0.18, 'square', 900); this._tone(1870, 0.3, 0.12, 'sine'); this._noise(0.12, 'highpass', 3000, 0.7, 0.4); }
   hurt() { this._noise(0.25, 'lowpass', 700, 1, 0.9, 120); this._tone(90, 0.25, 0.4, 'sawtooth', 50); }

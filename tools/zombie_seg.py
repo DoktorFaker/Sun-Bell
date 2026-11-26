@@ -15,6 +15,9 @@ SHEETS = {
     5: dict(front=(2, 60, 902, 1385), side=(2195, 60, 2550, 1385), back=(1205, 60, 2145, 1385), side_faces='right',   # T-pose sheet
             face=dict(file='tools/sheets/zombie5_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1300, 0, 2576, 1438), side_flip=True,
                       body_front=(446, 187), face_front=(676, 516), body_side=(2432, 210), face_side=(2410, 620), k=5.0)),
+    6: dict(front=(40, 60, 860, 1400), side=(2130, 60, 2475, 1400), back=(1245, 60, 2070, 1400), side_faces='right',   # A-pose sheet
+            face=dict(file='tools/sheets/zombie6_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1300, 0, 2576, 1438), side_flip=True,
+                      body_front=(446, 204), face_front=(640, 590), body_side=(2374, 224), face_side=(2350, 700), k=4.47)),
     3: dict(front=(40, 40, 962, 1400), side=(2140, 40, 2515, 1400), back=(1215, 40, 2125, 1400), side_faces='right',   # A-pose sheet
             face=dict(file='tools/sheets/zombie3_face.jpg', front_box=(100, 0, 1300, 1438), side_box=(1350, 0, 2576, 1438), side_flip=True,
                       body_front=(506, 156), face_front=(670, 570), body_side=(2392, 158), face_side=(2456, 570), k=4.5)),
@@ -59,7 +62,7 @@ def load(i):
     return out
 
 if __name__ == '__main__':
-    for i in (1, 2, 3, 4, 5):
+    for i in (1, 2, 3, 4, 5, 6):
         v = load(i)
         tiles = []
         for k in ('front', 'side', 'back'):

@@ -46,18 +46,32 @@ world.camera = camera;
 const game = new Game({ world, camera, input, pipeline });
 window.__game = game; import('./game/Zombie.js').then((m) => { window.__gore = (dt) => m.GORE.update(dt); }); window.THREE = THREE; import('./world/terrain.js').then((t) => { window.__T = t.TEMPLE; }); window.__renderer = renderer; window.__pipeline = pipeline; // handy for debugging in the console
 
+// dynamic resolution: render a little smaller when frames run long, so the chosen preset holds 60 fps
+const drs = { scale: 1, acc: 0, n: 0, cool: 0, upBlock: 0 };
+function dynRes(ms) {
+  if (game?.mode !== 'play') return;
+  drs.cool -= ms / 1000; drs.upBlock -= ms / 1000;
+  drs.acc += ms; drs.n++;
+  if (drs.n < 40) return;
+  const avg = drs.acc / drs.n; drs.acc = 0; drs.n = 0;
+  if (drs.cool > 0) return;
+  let next = drs.scale;
+  if (avg > 18.2) { next = Math.max(0.6, drs.scale - (avg > 26 ? 0.12 : 0.06)); drs.upBlock = 12; }
+  else if (avg < 16.2 && drs.upBlock <= 0) next = Math.min(1, drs.scale + 0.04);
+  if (Math.abs(next - drs.scale) > 0.01) { drs.scale = next; drs.cool = 1.2; applySize(); }
+}
 function applySize() {
   const dpr = Math.min(devicePixelRatio || 1, quality.maxDpr);
   renderer.setPixelRatio(dpr);
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  pipeline.configure(quality, Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
+  pipeline.configure({ ...quality, renderScale: quality.renderScale * drs.scale }, Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
 }
 function applyQuality(name, why) {
   tier = name; quality = PRESETS[name];
   world.applyShadowQuality(quality);
-  world.setGrass(quality.grass);
+  world.setGrass(quality.grass, quality.grassDist);
   applySize();
   renderPresetButtons();
   if (why) game.toast(why, true, 3);
@@ -121,7 +135,7 @@ function perfWatch(dt) {
     const fps = perf.frames / perf.acc;
     perf.frames = 0; perf.acc = 0;
     const i = ORDER.indexOf(tier);
-    if (!manual && fps < 36 && i > 0 && perf.steps < 2) {
+    if (!manual && fps < 33 && drs.scale <= 0.61 && i > 0 && perf.steps < 2) {
       perf.steps++;
       applyQuality(ORDER[i - 1], `Graphics lowered to ${PRESETS[ORDER[i - 1]].name} to keep things smooth`);
       perf.t = perf.warm - 3;
@@ -132,7 +146,10 @@ function perfWatch(dt) {
 // --- main loop
 const clock = new THREE.Timer();
 let fpsAcc = 0, fpsN = 0, elapsed = 0;
+let lastT = performance.now();
 function frame() {
+  const nowT = performance.now(); const rawMs = nowT - lastT; lastT = nowT;
+  if (rawMs < 250) dynRes(rawMs);
   clock.update(); const dt = Math.min(clock.getDelta(), 1 / 20);
   elapsed += dt;
   if (game.input.pressed.has('pause')) {
@@ -147,8 +164,8 @@ function frame() {
   } else game.input.endFrame();
   pipeline.render(world.scene, camera, world.sunInfo, dt);
   perfWatch(dt);
-  fpsAcc += dt; fpsN++;
-  if (fpsAcc > 0.5) { fpsEl.textContent = `${Math.round(fpsN / fpsAcc)} fps · ${quality.name} · ${pipeline.W}×${pipeline.H}`; fpsAcc = 0; fpsN = 0; }
+  fpsAcc += rawMs / 1000; fpsN++;
+  if (fpsAcc > 0.5) { fpsEl.textContent = `${Math.round(fpsN / fpsAcc)} fps · ${quality.name} · ${pipeline.W}×${pipeline.H}${drs.scale < 1 ? ` (${Math.round(drs.scale * 100)}%)` : ''}`; fpsAcc = 0; fpsN = 0; }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

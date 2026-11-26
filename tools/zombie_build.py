@@ -424,5 +424,5 @@ def build(i, out):
 
 
 if __name__ == '__main__':
-    for i in (1, 2, 3, 4, 5):
+    for i in (1, 2, 3, 4, 5, 6):
         build(i, 'public/models')

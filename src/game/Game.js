@@ -355,13 +355,13 @@ export class Game {
   }
 
   // ---------------- speech bubbles ----------------
-  say(enemy, text) {
+  say(enemy, text, quiet = false) {
     let b = this.bubbles.get(enemy);
     if (!b) { const el = document.createElement('div'); el.className = 'bubble'; this.ui.bubbles.appendChild(el); b = { el, t: 0 }; this.bubbles.set(enemy, b); }
     b.el.textContent = text;
     b.t = Math.min(4.5, 1.6 + text.length * 0.045);
     b.el.classList.add('show');
-    this.sfx.blah();
+    if (!quiet) this.sfx.blah();
   }
 
   waterDepthAt(x, z) {
@@ -573,6 +573,13 @@ export class Game {
         case 'sever': this.sfx.gore(); this.rig.addShake(0.15); break;
         case 'zombie-groan': if (ev.enemy.pos.distanceTo(this.hero.pos) < (ev.quiet ? 12 : 20)) this.sfx.groan(ev.quiet ? 0.08 : 0.18); break;
         case 'zombie-bite': break;
+        case 'zombie-say': {
+          const d = ev.enemy.pos.distanceTo(this.hero.pos);
+          if (d > 26) break;
+          this.say(ev.enemy, ev.text, true);
+          this.sfx.speak(ev.text, ev.female, 1.1 - d / 26);
+          break;
+        }
         case 'healed': this.sfx.heal(); this.sparks.burst(this.hero.centre, 30, new THREE.Color(4, 3, 1.2), 1.5, 2); break;
         case 'death': this.onDeath(); break;
       }

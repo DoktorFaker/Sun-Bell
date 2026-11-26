@@ -11,9 +11,13 @@ const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 const KINDS = [];   // loaded variants: { meta, map }
+// which sheets are women (zombie1, zombie5, zombie6) — for their voice lines
+const FEMALE = new Set([0, 4, 5]);
+const LINES = { f: ['I will eat your head!'], m: ['Get to the chopper!', 'Show me the money, bitch!'] };
+let lastLine = 0;
 
 export async function loadZombies() {
-  await Promise.all([1, 2, 3, 4, 5].map(async (i) => {
+  await Promise.all([1, 2, 3, 4, 5, 6].map(async (i) => {
     try {
       const [meta, map] = await Promise.all([
         fetch(`./models/zombie${i}.json`).then((r) => r.json()),
@@ -218,6 +222,16 @@ export class Zombie {
     this.phase = Math.random() * 10;
     this.speedMul = rnd(0.8, 1.35);
     this.runner = Math.random() < 0.25;
+    this.female = FEMALE.has(this.variant ?? -1);
+    this.lineT = 0;
+    // every zombie moves a little differently
+    const pickArm = () => [1, 1, 0.75, 0.4, 0.15][Math.floor(Math.random() * 5)];
+    this.style = {
+      reachR: pickArm(), reachL: pickArm(),            // how high each arm is held out
+      lean: rnd(0.1, 0.42), headTilt: rnd(-0.35, 0.35), headDrop: rnd(-0.25, 0.2),
+      stride: rnd(0.32, 0.6), stiff: Math.random() < 0.5 ? 'L' : 'R', sway: rnd(0.04, 0.14),
+      twitch: rnd(0.04, 0.14), shoulder: rnd(0.05, 0.25), cadence: rnd(0.8, 1.2),
+    };
     this.flash = 0;
     this.scene = scene;
     this.mat = projectedMaterial(kind);
@@ -259,6 +273,12 @@ export class Zombie {
       grp.add(end); grp.userData.end = end;
     }
     this.attached = new Set(order.filter((n) => this.g[n]));
+    // sheets differ (arms out in a T, angled in an A): measure each arm so "hanging" means straight down
+    this.armRest = {};
+    for (const sd of 'RL') {
+      const a = P['uarm' + sd]?.pivot, b = P['farm' + sd]?.pivot;
+      this.armRest[sd] = a && b ? Math.atan2(-(b[0] - a[0]), -(b[1] - a[1])) : (sd === 'R' ? 0.35 : -0.35);
+    }
     this.object = g;
     this.object.scale.setScalar(rnd(0.95, 1.06));
     scene.add(g);
@@ -352,6 +372,16 @@ export class Zombie {
     return true;
   }
 
+  /** Now and then a zombie shouts its line (one voice at a time across the valley). */
+  speak(events, chance) {
+    const now = performance.now() / 1000;
+    if (now - lastLine < 5 || now - this.lineT < 14 || Math.random() > chance) return;
+    if (!this.attached.has('head')) return;
+    lastLine = now; this.lineT = now;
+    const L = LINES[this.female ? 'f' : 'm'];
+    events.push({ type: 'zombie-say', enemy: this, text: L[Math.floor(Math.random() * L.length)], female: this.female });
+  }
+
   update(dt, hero, others, collider, events) {
     GORE.collider = collider;
     this.stateT += dt;
@@ -371,7 +401,7 @@ export class Zombie {
         if (this.stateT > 4) { this.stateT = 0; this.wanderTarget.set(this.home.x + rnd(-5, 5), 0, this.home.z + rnd(-5, 5)); }
         const w = new THREE.Vector3(this.wanderTarget.x - this.pos.x, 0, this.wanderTarget.z - this.pos.z);
         if (w.length() > 0.6) { dir = w.normalize(); speed = walk * 0.45; face = Math.atan2(dir.x, dir.z); }
-        if (hero.targetable && dist < 17) { this.state = 'chase'; this.stateT = 0; events.push({ type: 'zombie-groan', enemy: this }); }
+        if (hero.targetable && dist < 17) { this.state = 'chase'; this.stateT = 0; events.push({ type: 'zombie-groan', enemy: this }); this.speak(events, 0.7); }
         break;
       }
       case 'chase': {
@@ -379,7 +409,7 @@ export class Zombie {
         face = heroYaw;
         if (dist > reach * 0.8) { dir = toHero.clone().normalize(); speed = walk; }
         if (dist < reach + 0.4 && this.attackCooldown <= 0 && Math.abs(angDiff(this.yaw, heroYaw)) < 0.7) {
-          this.state = 'windup'; this.stateT = 0; events.push({ type: 'zombie-groan', enemy: this });
+          this.state = 'windup'; this.stateT = 0; events.push({ type: 'zombie-groan', enemy: this }); this.speak(events, 0.3);
         }
         if (Math.random() < dt * 0.08) events.push({ type: 'zombie-groan', enemy: this, quiet: true });
         break;
@@ -428,7 +458,12 @@ export class Zombie {
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
     const hit = probeDown(collider, new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z), 4);
     if (hit) this.pos.y = damp(this.pos.y, hit.point.y, 20, dt);
-    this.animate(dt);
+    // far away: cheaper (no shadows, animate at a lower rate)
+    const far = dist > 45;
+    if (far !== this._far) { this._far = far; this.object.traverse((m) => { if (m.isMesh) m.castShadow = !far; }); }
+    this._animAcc = (this._animAcc || 0) + dt;
+    if (dist < 70 || this._animAcc > 0.1) { this.animate(this._animAcc); this._animAcc = 0; }
+    else { this.object.position.copy(this.pos); this.object.rotation.y = this.yaw; }
   }
 
   animate(dt) {
@@ -436,56 +471,102 @@ export class Zombie {
     o.position.copy(this.pos);
     o.rotation.y = this.yaw;
     this.mat.userData.flash.value = this.flash;
-    const G = this.g;
+    const G = this.g, S = this.style;
     const spd = Math.hypot(this.vel.x, this.vel.z);
     const la = clamp(spd / 1.4, 0, 1.3);
-    const ph = this.phase * (this.runner ? 7.5 : 4.2) * (0.6 + 0.4 * la);
+    const ph = this.phase * (this.runner ? 7.5 : 4.2) * S.cadence * (0.6 + 0.4 * la);
     const t = this.stateT;
-    const set = (n, x, y, z) => { const p = G[n]; if (p && this.attached.has(n)) p.rotation.set(x, y, z); };
-    const twitch = Math.sin(this.phase * 13.7) * Math.sin(this.phase * 3.1) * 0.08;
+    const ease = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+    // every joint eases toward its target, so poses blend into each other smoothly
+    let K = this.state === 'strike' ? 16 : this.state === 'windup' ? 10 : 7;
+    const T = {};
+    const set = (n, x, y, z) => { T[n] = [x, y, z]; };
+    const twitch = (Math.sin(this.phase * 13.7) * Math.sin(this.phase * 3.1) + Math.sin(this.phase * 23.3) * 0.3) * S.twitch;
+    let rootY = this.rootY - 0.03, rootX = 0, rootZ = 0;
+
     if (this.crawling) {
       // dragging itself along by the arms
-      this.root.rotation.x = damp(this.root.rotation.x, 1.35, 6, dt);
-      this.root.position.y = damp(this.root.position.y, 0.22, 6, dt);
-      set('torso', 0.05, Math.sin(ph) * 0.15, Math.sin(ph) * 0.1);
-      set('head', -1.0 + twitch, Math.sin(ph * 0.5) * 0.2, 0);
+      rootX = 1.35; rootY = 0.22;
       const pull = Math.sin(ph);
-      set('uarmR', -2.7 + pull * 0.6, 0, 0.25); set('uarmL', -2.7 - pull * 0.6, 0, -0.25);
-      set('farmR', -0.3 - Math.max(0, -pull) * 0.8, 0, 0); set('farmL', -0.3 - Math.max(0, pull) * 0.8, 0, 0);
-      if (this.state === 'strike') { set('head', -0.6, 0, 0); }
-      return;
-    }
-    this.root.rotation.x = damp(this.root.rotation.x, 0, 6, dt);
-    const limp = this.legsLost === 1;
-    // shambling legs (one drags stiffly)
-    const sw = Math.sin(ph) * 0.45 * la;
-    const bob = Math.abs(Math.cos(ph)) * 0.04 * la;
-    let rootY = this.rootY - 0.03 + bob;
-    if (limp) {
-      // hop on the remaining leg, the stump swings
-      const good = this.attached.has('thighR') && this.attached.has('shinR') ? 'R' : 'L';
-      const bad = good === 'R' ? 'L' : 'R';
-      set('thigh' + good, -0.15 + sw * 0.3, 0, 0); set('shin' + good, 0.25 + Math.max(0, Math.sin(ph * 2)) * 0.4, 0, 0);
-      set('thigh' + bad, -0.4 + sw, 0, 0); set('shin' + bad, 0.3, 0, 0);
-      rootY -= 0.08 - Math.abs(Math.sin(ph * 2)) * 0.07 * la;
-      this.root.rotation.z = damp(this.root.rotation.z, good === 'R' ? 0.12 : -0.12, 5, dt);
+      set('torso', 0.05, pull * 0.18, pull * 0.12);
+      set('head', -1.0 + twitch, Math.sin(ph * 0.5) * 0.25, 0);
+      set('uarmR', -2.6 + pull * 0.7, 0, this.armRest.R + 0.1); set('uarmL', -2.6 - pull * 0.7, 0, this.armRest.L - 0.1);
+      set('farmR', -0.3 - Math.max(0, -pull) * 0.9, 0, 0); set('farmL', -0.3 - Math.max(0, pull) * 0.9, 0, 0);
+      if (this.state === 'windup') set('head', -1.3, 0, 0);
+      if (this.state === 'strike') { set('head', -0.5, Math.sin(t * 40) * 0.2, 0); set('uarmR', -3.0, 0, this.armRest.R); set('uarmL', -3.0, 0, this.armRest.L); }
     } else {
-      this.root.rotation.z = damp(this.root.rotation.z, Math.sin(ph) * 0.06 * la, 8, dt);
-      set('thighR', -sw - 0.05, 0.05, 0.02); set('thighL', sw - 0.05, -0.05, -0.02);
-      set('shinR', 0.15 + Math.max(0, Math.sin(ph + 1.3)) * 0.7 * la, 0, 0);
-      set('shinL', 0.15 + Math.max(0, Math.sin(ph + 1.3 + Math.PI)) * 0.45 * la, 0, 0);   // the stiff one
+      const limp = this.legsLost === 1;
+      const sw = Math.sin(ph) * S.stride * la;
+      rootY += Math.abs(Math.cos(ph)) * 0.045 * la;
+      if (limp) {
+        const good = this.attached.has('thighR') && this.attached.has('shinR') ? 'R' : 'L';
+        const bad = good === 'R' ? 'L' : 'R';
+        set('thigh' + good, -0.15 + sw * 0.3, 0, 0); set('shin' + good, 0.25 + Math.max(0, Math.sin(ph * 2)) * 0.45, 0, 0);
+        set('thigh' + bad, -0.4 + sw, 0, 0); set('shin' + bad, 0.3, 0, 0);
+        rootY -= 0.08 - Math.abs(Math.sin(ph * 2)) * 0.07 * la;
+        rootZ = good === 'R' ? 0.13 : -0.13;
+      } else {
+        rootZ = Math.sin(ph) * S.sway * la;
+        // one leg drags stiffly, the other shambles
+        const kneeR = S.stiff === 'R' ? 0.35 : 0.75, kneeL = S.stiff === 'L' ? 0.35 : 0.75;
+        set('thighR', -sw - 0.05, 0.05, 0.03); set('thighL', sw - 0.05, -0.05, -0.03);
+        set('shinR', 0.12 + Math.max(0, Math.sin(ph + 1.3)) * kneeR * la, 0, 0);
+        set('shinL', 0.12 + Math.max(0, Math.sin(ph + 1.3 + Math.PI)) * kneeL * la, 0, 0);
+      }
+      // upper body: each zombie holds its arms its own way
+      const reach = (r) => lerp(-0.25, -1.25, r);
+      let armR = reach(S.reachR) + Math.sin(ph) * 0.12 * la, armL = reach(S.reachL) - Math.sin(ph) * 0.12 * la;
+      let inR = lerp(0.08, 0.4, S.reachR), inL = lerp(0.08, 0.4, S.reachL);
+      let elR = lerp(-0.05, -0.4, S.reachR), elL = lerp(-0.05, -0.4, S.reachL);
+      let lean = S.lean + twitch * 0.5, headX = S.headDrop + twitch * 2, headZ = S.headTilt + twitch, headY = Math.sin(this.phase * 0.9) * 0.25;
+      let torsoY = Math.sin(ph) * S.shoulder * la, torsoZ = Math.sin(this.phase * 0.7) * 0.06;
+      if (this.state === 'idle' && la < 0.2) {
+        // swaying on the spot
+        armR = -0.2 + Math.sin(this.phase * 1.1) * 0.06; armL = -0.2 - Math.sin(this.phase * 1.3) * 0.06; inR = inL = 0.08; elR = elL = -0.12;
+        lean = S.lean * 0.6; headX = 0.3 + twitch * 2; torsoZ = Math.sin(this.phase * 0.6) * 0.1;
+      }
+      if (this.state === 'windup') {
+        // rear back, arms up, head thrown back
+        const k = ease(t / 0.5);
+        armR = lerp(armR, -2.3, k); armL = lerp(armL, -2.2, k); inR = inL = lerp(0.3, 0.05, k);
+        elR = elL = lerp(-0.3, -0.9, k); lean = lerp(lean, -0.25, k); headX = lerp(headX, -0.55, k); torsoY = 0.15 * k;
+        rootY -= 0.05 * k;
+      }
+      if (this.state === 'strike') {
+        // lunge: arms rake down and in, the body throws itself forward, then the bite
+        const k1 = ease(t / 0.16), k2 = ease((t - 0.14) / 0.14);
+        armR = lerp(-2.3, -1.0, k1); armL = lerp(-2.2, -0.95, k1); inR = inL = lerp(0.05, 0.65, k1);
+        elR = elL = lerp(-0.9, -0.15, k1);
+        lean = lerp(-0.25, 0.7, k1); torsoY = lerp(0.15, -0.2, k1);
+        headX = lerp(-0.55, 0.35, k2) + (t > 0.18 && t < 0.4 ? Math.sin(t * 55) * 0.12 : 0);   // the bite, with a shake
+        headY = t > 0.18 && t < 0.4 ? Math.sin(t * 38) * 0.25 : 0;
+        rootY -= 0.08 * k1;
+      }
+      if (this.state === 'recover') {
+        const k = ease(t / 0.7);
+        lean = lerp(0.7, lean, k); armR = lerp(-1.0, armR, k); armL = lerp(-0.95, armL, k); inR = lerp(0.65, inR, k); inL = lerp(0.65, inL, k);
+        headX = lerp(0.35, headX, k);
+      }
+      if (this.state === 'stagger') {
+        const k = Math.sin(clamp(t / 0.5, 0, 1) * Math.PI);
+        lean = lerp(lean, -0.45, k); headX = lerp(headX, -0.7, k); armR = lerp(armR, -0.6, k); armL = lerp(armL, -0.4, k); torsoY = 0.3 * k;
+        K = 12;
+      }
+      set('torso', lean, torsoY, torsoZ);
+      set('head', headX, headY, headZ);
+      // inR/inL: 0 = hanging straight down, more = brought in toward the chest
+      set('uarmR', armR, 0, this.armRest.R - 0.12 + inR * 0.55); set('uarmL', armL, 0, this.armRest.L + 0.12 - inL * 0.55);
+      set('farmR', elR, 0, 0); set('farmL', elL, 0, 0);
     }
-    this.root.position.y = rootY;
-    // hunched, reaching
-    let lean = 0.22 + twitch, armX = -1.15 + Math.sin(ph * 0.5) * 0.12, armIn = 0.35, elbow = -0.35, headX = -0.15 + twitch * 2;
-    if (this.state === 'idle' && la < 0.2) { armX = -0.25 + Math.sin(this.phase) * 0.05; armIn = 0.1; elbow = -0.1; lean = 0.15; headX = 0.25; }
-    if (this.state === 'windup') { const k = clamp(t / 0.5, 0, 1); armX = lerp(-1.2, -1.95, k); lean = lerp(0.2, -0.1, k); headX = -0.4 * k; elbow = -0.6; armIn = 0.1; }
-    if (this.state === 'strike') { const k = clamp(t / 0.2, 0, 1); armX = lerp(-1.95, -1.25, k); lean = lerp(-0.1, 0.55, k); headX = lerp(-0.4, 0.3, k); elbow = lerp(-0.6, -0.1, k); armIn = lerp(0.1, 0.55, k); }
-    if (this.state === 'recover') { const k = clamp(t / 0.7, 0, 1); lean = lerp(0.55, 0.22, k); armX = lerp(-1.25, -1.15, k); }
-    if (this.state === 'stagger') { lean = -0.3 + t * 0.8; headX = -0.6; armX = -0.5; }
-    set('torso', lean, Math.sin(ph) * 0.08 * la, Math.sin(this.phase * 0.7) * 0.06);
-    set('head', headX, Math.sin(this.phase * 0.9) * 0.25, Math.sin(this.phase * 0.5) * 0.15 + twitch);
-    set('uarmR', armX + Math.sin(ph) * 0.1, 0, armIn); set('uarmL', armX - Math.sin(ph) * 0.1 + 0.15, 0, -armIn);
-    set('farmR', elbow, 0, 0); set('farmL', elbow - 0.15, 0, 0);
+    const k = 1 - Math.exp(-K * dt);
+    for (const n in T) {
+      const p = G[n]; if (!p || !this.attached.has(n)) continue;
+      const [x, y, z] = T[n];
+      p.rotation.x += (x - p.rotation.x) * k; p.rotation.y += (y - p.rotation.y) * k; p.rotation.z += (z - p.rotation.z) * k;
+    }
+    const kr = 1 - Math.exp(-6 * dt);
+    this.root.rotation.x += (rootX - this.root.rotation.x) * kr;
+    this.root.rotation.z += (rootZ - this.root.rotation.z) * kr;
+    this.root.position.y += (rootY - this.root.position.y) * (1 - Math.exp(-10 * dt));
   }
 }
