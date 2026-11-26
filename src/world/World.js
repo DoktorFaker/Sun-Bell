@@ -73,17 +73,11 @@ export class World {
     this.colliderMesh.visible = false;
     this.scene.add(this.colliderMesh);
 
-    // Rustcart spawn points: a roadside ambush mid-valley and a guard before the temple stairs
-    this.botSpawns = [];
-    for (const [z, off] of [[-150, 4]]) this.botSpawns.push(new THREE.Vector3(roadX(z) + off, heightAt(roadX(z) + off, z), z));
-    {
-      const x = TEMPLE.x + 6, z = TEMPLE.z + 36;
-      this.botSpawns.push(new THREE.Vector3(x, heightAt(x, z), z));
+    // a few more of the dead on the temple approach
+    for (const [dx, dz] of [[6, 36], [-5, 40]]) {
+      const x = TEMPLE.x + dx, z = TEMPLE.z + dz;
+      this.enemySpawns.push(new THREE.Vector3(x, heightAt(x, z), z));
     }
-
-    // The Client: two greedy businessmen on the road
-    this.clientSpawns = [];
-    for (const [z, off] of [[-70, -3], [-196, 3]]) this.clientSpawns.push(new THREE.Vector3(roadX(z) + off, heightAt(roadX(z) + off, z), z));
     // Helicopter parked beside the camp
     {
       const x = HELIPAD.x, z = HELIPAD.z;

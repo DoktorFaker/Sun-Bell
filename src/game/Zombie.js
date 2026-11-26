@@ -46,7 +46,7 @@ function buildGeometries(meta) {
 
 /** Paints the parts by projecting the front, side and back drawings (blended by facing). */
 function projectedMaterial(kind) {
-  const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.35 });
   const u = kind.meta.uv;
   m.userData.flash = { value: 0 };
   m.onBeforeCompile = (sh) => {
@@ -59,18 +59,33 @@ function projectedMaterial(kind) {
       .replace('#include <common>', '#include <common>\nattribute vec3 rest; varying vec3 vRest; varying vec3 vRestN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = rest; vRestN = normal;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tAtlas; uniform vec4 uF, uS, uB; uniform float uFlash; varying vec3 vRest; varying vec3 vRestN;')
+      .replace('#include <common>', `#include <common>
+uniform sampler2D tAtlas; uniform vec4 uF, uS, uB; uniform float uFlash; varying vec3 vRest; varying vec3 vRestN;
+// fabric folds, seams and wounds from the painting's own light and shade
+vec3 zPerturb(vec3 p, vec3 n, vec2 dH, float fd) {
+  vec3 sx = dFdx(p), sy = dFdy(p);
+  vec3 r1 = cross(sy, n), r2 = cross(n, sx);
+  float det = dot(sx, r1) * fd;
+  vec3 g = sign(det) * (dH.x * r1 + dH.y * r2);
+  return normalize(abs(det) * n - g);
+}`)
       .replace('#include <map_fragment>', `
         vec3 rn = normalize(vRestN);
-        vec3 bw = pow(abs(rn), vec3(4.0));
+        vec3 bw = pow(abs(rn), vec3(9.0));   // sharp hand-over between views: no double images
         float wf = rn.z > 0.0 ? bw.z : 0.0, wb = rn.z > 0.0 ? 0.0 : bw.z, ws = bw.x + bw.y * 0.6;
         wf += bw.y * 0.2; wb += bw.y * 0.2;
         vec4 cF = texture2D(tAtlas, vec2(uF.x * vRest.x + uF.y, uF.z * vRest.y + uF.w));
         vec4 cS = texture2D(tAtlas, vec2(uS.x * vRest.z + uS.y, uS.z * vRest.y + uS.w));
         vec4 cB = texture2D(tAtlas, vec2(uB.x * vRest.x + uB.y, uB.z * vRest.y + uB.w));
         vec4 texel = (cF * wf + cS * ws + cB * wb) / max(wf + ws + wb, 1e-4);
-        diffuseColor *= vec4(texel.rgb * 1.3, texel.a);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.12, 0.08), uFlash * 0.55);`);
+        diffuseColor *= vec4(texel.rgb * 1.15, texel.a);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.12, 0.08), uFlash * 0.55);
+        float zH = dot(texel.rgb, vec3(0.3, 0.59, 0.11));
+        vec3 zGlow = texel.rgb * 0.32;   // the sheets are already lit: keep their look in shade`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        normal = zPerturb(-vViewPosition, normal, vec2(dFdx(zH), dFdy(zH)) * 0.25, faceDirection);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += zGlow;`);
   };
   m.customProgramCacheKey = () => 'zombie-projected';
   return m;

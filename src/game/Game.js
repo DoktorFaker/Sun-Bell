@@ -2,10 +2,7 @@ import * as THREE from 'three';
 import { Hero } from './Hero.js';
 import { Enemy } from './Enemy.js';
 import { Zombie, GORE, zombiesReady } from './Zombie.js';
-import { CartBot } from './CartBot.js';
-import { Client } from './Client.js';
 import { Helicopter, GUN_ALTITUDE } from './Helicopter.js';
-import { SpriteBody } from './sprites.js';
 import { Base } from './Base.js';
 import { HollowKing } from './HollowKing.js';
 import { TemplePuzzles } from './Puzzles.js';
@@ -35,20 +32,18 @@ export class Game {
     this.trail = new SwordTrail(this.scene);
     this.sparks = new Sparks(this.scene);
     this.sfx = new Sfx();
-    this.enemies = world.enemySpawns.map((p) => new Enemy(p, this.scene));
-    this.bots = world.botSpawns.map((p) => new CartBot(p, this.scene));
-    this.enemies.push(...this.bots);
-    this.clients = world.clientSpawns.map((p) => new Client(p, this.scene));
-    this.enemies.push(...this.clients);
+    // the only enemies on the road are the user's zombies (plus the Hollow King in the temple)
     if (zombiesReady()) {
-      world.buildZombieSpawns(world.quality.grass < 10000 ? 12 : 18);
-      this.zombies = world.zombieSpawns.map((p) => new Zombie(p, this.scene));
-      this.enemies.push(...this.zombies);
+      world.buildZombieSpawns(world.quality.grass < 10000 ? 9 : 14);
+      this.zombies = [...world.enemySpawns, ...world.zombieSpawns].map((p) => new Zombie(p, this.scene));
+      this.enemies = [...this.zombies];
+    } else {
+      this.zombies = [];
+      this.enemies = world.enemySpawns.map((p) => new Enemy(p, this.scene));
     }
     this.boss = new HollowKing(this.scene);
     this.enemies.push(this.boss);
     this.puzzles = new TemplePuzzles(this);
-    SpriteBody.camera = camera;
     // helicopter parked by the camp
     this.heli = new Helicopter(this.scene, world.heliSpawn, world.heliYaw);
     this.inHeli = false;
@@ -523,12 +518,11 @@ export class Game {
       hero.attackHits.add(e);
       e.takeHit(a.dmg, hero.pos, events);
       const p = e.lockPoint; p.y -= 0.1;
-      if (e.kind === 'cartbot') this.sparks.burst(p, 30, new THREE.Color(5, 5.5, 7), 7, 2);
-      else if (e.kind === 'zombie') { /* blood comes from the zombie itself */ }
+      if (e.kind === 'zombie') { /* blood comes from the zombie itself */ }
       else this.sparks.burst(p, 26, new THREE.Color(6, 2.6, 0.8), 6, 1.5);
       this.hitstop = hero.attackIndex === 2 ? 0.11 : 0.065;
       this.rig.addShake(hero.attackIndex === 2 ? 0.45 : 0.28);
-      if (e.kind === 'cartbot') this.sfx.clank(); else this.sfx.hit();
+      this.sfx.hit();
     }
   }
 
@@ -556,52 +550,19 @@ export class Game {
         case 'boss-phase2': this.sfx.bossRoar(); this.rig.addShake(0.6); this.queueSubs([['The embers inside him burn brighter. The Hollow King will not fall quietly.', 4]]); break;
         case 'boss-leash': this.setObjective('Defeat the Hollow King and reclaim the Sun Bell\'s clapper'); break;
         case 'say': this.say(ev.enemy, ev.text); break;
-        case 'client-aggro':
-          if (!this.flags.clientSeen) { this.flags.clientSeen = true; this.queueSubs([['A Client. He wants the whole valley to know his name — and he has budgeted ten euros for it.', 5]]); }
-          break;
-        case 'client-throw': this.sfx.toss(); break;
-        case 'client-drink': this.sfx.glug(); break;
         case 'heli-shot': this.sfx.gun(); this.rig.addShake(0.04); break;
-        case 'heli-hit': if (ev.enemy.kind === 'zombie') break; this.sparks.burst(ev.pos, 10, ev.enemy.kind === 'cartbot' ? new THREE.Color(5, 5.5, 7) : ev.enemy.kind === 'client' ? new THREE.Color(3, 3, 2.8) : new THREE.Color(6, 2.6, 0.8), 5, 1); break;
+        case 'heli-hit': if (ev.enemy.kind === 'zombie') break; this.sparks.burst(ev.pos, 10, new THREE.Color(6, 2.6, 0.8), 5, 1); break;
         case 'heli-impact': break;
         case 'truck-hit': this.sfx.hit(); this.rig.addShake(0.3); break;
         case 'truck-crash': this.sfx.crash(); this.rig.addShake(0.45); break;
         case 'truck-bump': this.sfx.clank(); this.rig.addShake(0.2); break;
         case 'truck-water': if (!this._twT || performance.now() - this._twT > 2500) { this._twT = performance.now(); this.toast('Too deep — the truck needs the bridge', true, 1.6); } break;
         case 'heli-too-high': this.toast(`Too high — drop below ${GUN_ALTITUDE} m to fire`, true, 1.4); break;
-        case 'robot-beep':
-          this.sfx.beep();
-          if (!this.flags.botSeen && ev.enemy.state === 'taunt') {
-            this.flags.botSeen = true;
-            this.queueSubs([['A Rustcart — one of the old market automatons, still hauling wares for a town that is long gone. It has decided you are a thief.', 5.5]]);
-          }
-          break;
-        case 'robot-alarm': this.sfx.alarm(); break;
-        case 'robot-charge': this.sfx.charge(); this.rig.addShake(0.15); break;
-        case 'robot-crash': this.sfx.crash(); this.rig.addShake(0.35); this.sparks.burst(ev.enemy.lockPoint, 40, new THREE.Color(6, 4, 1.5), 6, 2);
-          if (!this.flags.botCrash) { this.flags.botCrash = true; this.toast('Stunned — strike now', true, 1.6); }
-          break;
-        case 'robot-laser-charge': this.sfx.laserCharge(); break;
-        case 'robot-laser': this.sfx.zap(); this.rig.addShake(0.12); break;
-        case 'robot-toss': this.sfx.toss(); break;
-        case 'robot-boom': this.sfx.boom(); this.rig.addShake(0.25); break;
         case 'kill': {
           if (ev.boss) { this.sfx.kill(); this.sfx.bossRoar(); this.sparks.burst(ev.enemy.lockPoint, 120, new THREE.Color(7, 2.6, 0.6), 6, 4); this.target = null; setTimeout(() => this.ending(), 3200); break; }
-          if (ev.client) {
-            this.sfx.kill();
-            this.sparks.burst(ev.enemy.lockPoint, 40, new THREE.Color(3, 3, 2.8), 4, 3);
-            if (!this.flags.clientKill) { this.flags.clientKill = true; this.queueSubs([['The Client slumps onto his briefcase. Somewhere, an invoice goes unpaid.', 4.5]]); }
-            break;
-          }
           if (ev.zombie) {
             this.sfx.gore();
             if (!this.flags.zombieKill) { this.flags.zombieKill = true; this.queueSubs([['The dead walk the valley since the Bell fell silent. Cut them apart — it is the only thing that stops them.', 5]]); }
-            break;
-          }
-          if (ev.robot) {
-            this.sfx.shutdown();
-            this.sparks.burst(ev.enemy.lockPoint, 70, new THREE.Color(3, 5, 9), 5, 3);
-            if (!this.flags.botKill) { this.flags.botKill = true; this.queueSubs([["The Rustcart's screen flickers to two small crosses. Its wares spill across the road.", 4.5]]); }
             break;
           }
           this.sfx.kill();
@@ -700,7 +661,7 @@ export class Game {
       for (const e of this.enemies) e.reset();
       this.checkpoint = { pos: hero.pos.clone().setY(hero.pos.y + 0.2), yaw: hero.yaw };
       this.ui.fade.style.opacity = 0;
-      this.toast('Rested · The hollow have returned', true, 2.5);
+      this.toast('Rested · The dead have risen again', true, 2.5);
       if (!this.flags.firstRest) { this.flags.firstRest = true; this.queueSubs([['The fire is warm. For a moment, the valley feels as it did when the Bell still rang.', 4.5]]); }
       setTimeout(() => { hero.state = 'move'; hero.stateT = 0; this.mode = 'play'; }, 900);
     }, 1400);

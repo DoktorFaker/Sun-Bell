@@ -7,8 +7,6 @@ import { World } from './world/World.js';
 import { Game } from './game/Game.js';
 import { generateTextures, loadTextureOverrides } from './world/textures.js';
 import { loadBranchTextures } from './world/trees.js';
-import { loadCartBotAtlas } from './game/CartBot.js';
-import { loadClientAtlas } from './game/Client.js';
 import { loadAvatar, avatarChoice } from './game/Avatar.js';
 import { loadBlueprints } from './game/blueprint.js';
 import { loadZombies } from './game/Zombie.js';
@@ -43,7 +41,7 @@ const [customTextures] = await Promise.all([loadTextureOverrides(quality.renderS
 if (customTextures.length) console.info('Custom textures:', customTextures.join(', '));
 await loadBlueprints();
 const world = new World(renderer, quality);
-await Promise.all([loadCartBotAtlas(), loadClientAtlas(), loadAvatar(), loadZombies()]);
+await Promise.all([loadAvatar(), loadZombies()]);
 world.camera = camera;
 const game = new Game({ world, camera, input, pipeline });
 window.__game = game; import('./game/Zombie.js').then((m) => { window.__gore = (dt) => m.GORE.update(dt); }); window.THREE = THREE; import('./world/terrain.js').then((t) => { window.__T = t.TEMPLE; }); window.__renderer = renderer; window.__pipeline = pipeline; // handy for debugging in the console

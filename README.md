@@ -25,9 +25,6 @@ Needs Node.js 18+ (https://nodejs.org) and a WebGL 2 browser (Chrome, Edge or Fi
 | FPS counter | F3 | |
 
 ## Enemies
-- **Hollows**: husks of the old temple guard. They wind up (eyes flare), then lunge.
-- **Rustcart**: a rogue market robot (sprite enemy). It rams after its alarm lights flash and is left stunned if it hits a wall or your shield. It also burns a red laser circle where you stand (unblockable, so move) and lobs glowing crates. It enrages below 40% health.
-- **The Client**: a nervous, greedy businessman who wants massive visibility for €10 (sprite enemy). He pitches and complains in speech bubbles, throws crumpled invoices, lunges to grab you, and charges in a tantrum when hurt. He sips from a hip flask to heal and gets tipsy: wobblier, but he throws more.
 - **Zombies** (3D, from the turnaround sheets in `tools/sheets/zombie*.jpg`): packs shamble through the woods beside the road and join the raids; some run. They reach, lunge and bite. Every hit can cut off a limb: forearms, whole arms, shins, legs or the head. A zombie with one leg hops, with no legs it crawls on its arms, and with no arms it still bites. A head cut off or the last of its health tears it fully apart. Rebuild them after changing a sheet with `python3 -I tools/zombie_build.py`.
 
 ## Vehicles from blueprints
@@ -50,11 +47,11 @@ Pause menu → **Character**: *Heroine* (the VRM Studio "Base Female" model, `pu
 | House | 30 wood, 15 stone | Backpack +15, hearth +100 HP |
 | Bridge | 24 wood, 12 stone | Only at the river crossing; opens the north road |
 
-- **Raids:** the first wave hits after 5 minutes, then every 4 minutes. You can call one early at the **war drum**. Hollows, Clients and Rustcarts march from the treeline on the **hearth** (the campfire), bashing any wall in their way. Win a raid to earn bonus supplies. If the hearth falls, you lose half your stored supplies. Each wave is bigger.
+- **Raids:** the first wave hits after 5 minutes, then every 4 minutes. You can call one early at the **war drum**. Zombies march from the treeline on the **hearth** (the campfire), bashing any wall in their way. Win a raid to earn bonus supplies. If the hearth falls, you lose half your stored supplies. Each wave is bigger.
 
 ## The river, the bridge and the truck
 - A river cuts the north road just past camp. It's too deep to wade, and the old bridge is in ruins. At the crossing, press **B** then **6** to rebuild it.
-- Once the bridge stands, part of each raid comes down the north road and crosses it. **Saboteurs** (Rustcarts and some Hollows) stop on the bridge and hack at it. If it falls, anything on it drops into the river and the north road is cut until you rebuild. Defend it with walls, traps and cannons at the bridgehead.
+- Once the bridge stands, part of each raid comes down the north road and crosses it. **Saboteurs** (some of the zombies) stop on the bridge and hack at it. If it falls, anything on it drops into the river and the north road is cut until you rebuild. Defend it with walls, traps and cannons at the bridgehead.
 - **The truck** sits broken in a shed at the south end of the road. Press **E** to repair it (10 wood, 6 stone stored), then **E** to drive: **W/S** drive, **A/D** steer, **Space** brake, **E** to get out. Walk up to the truck to tip your backpack into its bed (holds 60). Drive it next to the stockpile and it unloads by itself. Hit enemies fast enough and you run them over. It can't cross the river without the bridge.
 
 ## The temple trials

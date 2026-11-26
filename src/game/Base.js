@@ -5,8 +5,6 @@ import { extraGround } from './physics.js';
 import { TEX, triplanar } from '../world/textures.js';
 import { Enemy } from './Enemy.js';
 import { Zombie, zombiesReady } from './Zombie.js';
-import { Client } from './Client.js';
-import { CartBot } from './CartBot.js';
 
 const clamp = THREE.MathUtils.clamp;
 const damp = (a, b, k, dt) => THREE.MathUtils.lerp(a, b, 1 - Math.exp(-k * dt));
@@ -401,28 +399,26 @@ export class Base {
     r.active = true; r.wave++;
     const w = r.wave;
     const list = [];
-    for (let i = 0; i < 3 + w; i++) list.push(zombiesReady() && i % 2 === 0 ? 'zombie' : 'hollow');
-    if (zombiesReady()) for (let i = 0; i < w; i++) list.push('zombie');
-    for (let i = 0; i < Math.ceil(w / 2); i++) list.push('client');
-    for (let i = 0; i < Math.floor(w / 2); i++) list.push('cartbot');
+    const kindOf = zombiesReady() ? 'zombie' : 'hollow';
+    for (let i = 0; i < 4 + w * 2; i++) list.push(kindOf);
     const centre = new THREE.Vector3().copy(this.hearth.pos);
     const f = new THREE.Vector3(Math.sin(BRIDGE.yaw), 0, Math.cos(BRIDGE.yaw));
     const at = (pt, along) => new THREE.Vector3(pt.x + f.x * along, 0, pt.z + f.z * along);
     const north = this.bridge ? Math.ceil(list.length / 2) : 0;
     let saboteurs = 0;
     list.forEach((kind, i) => {
-      const fromNorth = i < north || (kind === 'cartbot' && this.bridge);
+      const fromNorth = i < north;
       // north raiders come down the road beyond the river; the rest from the southern woods
       const a = fromNorth ? Math.PI + (Math.random() - 0.5) * 0.7 : (Math.random() - 0.5) * 3.0;
       const R = fromNorth ? 62 : 56;
       const x = centre.x + Math.sin(a) * R, z = centre.z + Math.cos(a) * R;
       const p = new THREE.Vector3(x, heightAt(x, z), z);
-      const e = kind === 'zombie' ? new Zombie(p, this.scene) : kind === 'hollow' ? new Enemy(p, this.scene) : kind === 'client' ? new Client(p, this.scene) : new CartBot(p, this.scene);
+      const e = kind === 'zombie' ? new Zombie(p, this.scene) : new Enemy(p, this.scene);
       e.raider = true;
       const toward = new THREE.Vector3(x - centre.x, 0, z - centre.z).normalize();
       const hearthStop = centre.clone().addScaledVector(toward, 2.4);
       if (fromNorth) {
-        const sab = kind === 'cartbot' || (saboteurs < Math.ceil(w / 2) && kind === 'hollow');
+        const sab = saboteurs < Math.ceil(w / 2) + 1;
         if (sab) { saboteurs++; e.saboteur = true; e.route = [at(BRIDGE_ENDS.b, 4), at(BRIDGE, (Math.random() - 0.5) * 8)]; }
         else e.route = [at(BRIDGE_ENDS.b, 4), at(BRIDGE_ENDS.a, -4), hearthStop];
       } else e.route = [hearthStop];
@@ -485,22 +481,21 @@ export class Base {
       const s = this.pushOut(e.pos, e.radius || 0.45);
       if (e.raider) {
         if (e.hp > e._hp) e.hp = e._hp;
-        if (e.state === 'idle' && e.kind !== 'client' && e.kind !== 'cartbot') { /* hollows mill about the fire */ }
         const marching = ['return', 'idle', 'chase'].includes(e.state);
         if (s && marching) {
           e.siegeT = (e.siegeT || 0) + dt;
-          if (e.siegeT > 0.5) this.damageStructure(s, (e.kind === 'cartbot' ? 22 : e.kind === 'client' ? 7 : 12) * dt);
+          if (e.siegeT > 0.5) this.damageStructure(s, 12 * dt);
         } else e.siegeT = 0;
         if (e.saboteur && this.bridge && this.onBridge(e.pos.x, e.pos.z) && marching) {
           e.sabT = (e.sabT || 0) + dt;
           if (e.sabT > 0.6) {
-            this.damageStructure(this.bridge, (e.kind === 'cartbot' ? 24 : 12) * dt);
+            this.damageStructure(this.bridge, 12 * dt);
             if (Math.random() < dt * 2 && this.bridge) this.game.sparks.burst(e.pos.clone().setY(e.pos.y + 0.3), 6, new THREE.Color(0.8, 0.6, 0.4), 3, 1);
           }
         } else e.sabT = 0;
         const dh = Math.hypot(e.pos.x - this.hearth.pos.x, e.pos.z - this.hearth.pos.z);
         if (dh < 3.4 && marching) {
-          this.hearth.hp -= (e.kind === 'cartbot' ? 10 : 5) * dt;
+          this.hearth.hp -= 5 * dt;
           if (Math.random() < dt * 3) this.game.sparks.burst(this.hearth.pos.clone().setY(this.hearth.pos.y + 0.6), 5, new THREE.Color(4, 1.4, 0.3), 2, 1);
         }
         if (e.saboteur && !this.bridge) e.saboteur = false;

@@ -237,7 +237,7 @@ def build(i, out):
         piv['shin' + sd] = centre_row('thigh' + sd, built['thigh' + sd][0]['rows'][-1, 0])
 
     # atlas: front | side | back, 1024 tall
-    AH = 1024
+    AH = 1280   # keep the sheets' full detail
     tiles = []
     for c, m in ((fc, F), (sc, S), (bc, B)):
         t = bleed(c, m)
@@ -258,7 +258,7 @@ def build(i, out):
         'side': proj(offs[1], tiles[1].shape[1], ws, hs, czs, ss, 1),
         'back': proj(offs[2], tiles[2].shape[1], wb, hb, cxb, sb, -1),
     }
-    cv2.imwrite(f'{out}/zombie{i}.jpg', atlas, [cv2.IMWRITE_JPEG_QUALITY, 86])
+    cv2.imwrite(f'{out}/zombie{i}.jpg', atlas, [cv2.IMWRITE_JPEG_QUALITY, 93])
     parts = []
     for name, (p, parent) in built.items():
         parts.append(dict(name=name, parent=parent, pivot=piv[name], pos=p['pos'], idx=p['idx']))
