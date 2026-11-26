@@ -13,7 +13,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const KINDS = [];   // loaded variants: { meta, map }
 
 export async function loadZombies() {
-  await Promise.all([1, 2, 3, 4].map(async (i) => {
+  await Promise.all([1, 2, 3, 4, 5].map(async (i) => {
     try {
       const [meta, map] = await Promise.all([
         fetch(`./models/zombie${i}.json`).then((r) => r.json()),

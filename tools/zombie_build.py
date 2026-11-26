@@ -242,9 +242,15 @@ def build(i, out):
             rows[('thigh' if r < knee else 'shin') + side][r] = q
         rows['thigh' + side]['knee'] = knee
 
-    def side_at(y):
+    # side silhouette without arms sticking out (for the body's depth)
+    kS = int(hs * 0.07) | 1
+    S_core = cv2.morphologyEx(S, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kS, kS)))
+    head_rows = int(hs * 0.16)
+    S_core[:head_rows] = S[:head_rows]
+    S_core = keep_largest(S_core)
+    def side_at(y, core=True):
         r = int(np.clip(hs - y / ss, 0, hs - 1))
-        rr = runs_of(S[r])
+        rr = runs_of((S_core if core else S)[r]) or runs_of(S[r])
         if not rr: return czs, 0.05 / ss
         a, b = min(q[0] for q in rr), max(q[1] for q in rr)
         return (a + b) / 2, (b - a) / 2
@@ -418,5 +424,5 @@ def build(i, out):
 
 
 if __name__ == '__main__':
-    for i in (1, 2, 3, 4):
+    for i in (1, 2, 3, 4, 5):
         build(i, 'public/models')
