@@ -73,6 +73,7 @@ export class Game {
     this.gunFireT = 0; this.turretT = 0;
     this.boomLight = new THREE.PointLight(new THREE.Color(1, 0.6, 0.25), 0, 30, 2); this.scene.add(this.boomLight);
     this.flashLight = new THREE.PointLight(new THREE.Color(1, 0.72, 0.35), 0, 12, 2); this.scene.add(this.flashLight);
+    this.boomLight.userData.flash = this.flashLight.userData.flash = true;
     this.spawnPickups();
     // footsteps: dust on dry ground, splashes and ripples in the shallows
     this.ripples = [];
@@ -244,7 +245,18 @@ export class Game {
         this.sfx.place();
       }
       this.base.preEnemies();
-      for (const e of [...this.enemies]) e.update(gdt, hero, this.enemies, this.world.collider, events);
+      const camP = this.camera.position;
+      this._frameN = (this._frameN || 0) + 1;
+      for (const e of [...this.enemies]) {
+        // far away and asleep: think less often (the boss waits in the temple until woken)
+        if (e.kind === 'boss' && e.state === 'dormant' && e.pos.distanceTo(hero.pos) > 70 && this._frameN % 15) continue;
+        if (e.kind === 'zombie') {
+          const far = e.alive && e.pos.distanceTo(camP) > 130 && e.state === 'idle';
+          e.object.visible = !far && (e.object.visible || e.alive);
+          if (far && this._frameN % 10) continue;
+        }
+        e.update(gdt, hero, this.enemies, this.world.collider, events);
+      }
       this.base.postEnemies(gdt, events);
       // nobody walks through the truck or the helicopter
       for (const e of this.enemies) if (e.alive && e.kind !== 'boss') this.pushOutOfVehicles(e.pos, e.radius || 0.45);

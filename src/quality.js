@@ -4,22 +4,22 @@ export const PRESETS = {
   low: {
     name: 'Low', renderScale: 0.9, maxDpr: 1.25, shadowSize: 1024, shadowRange: 32,
     ao: false, aoSamples: 0, fogSteps: 12, fogScale: 0.25, dof: false, dofSamples: 0,
-    bloomLevels: 4, grass: 6000, treeShadows: false, grassDist: 80, fogDist: 340,
+    bloomLevels: 4, grass: 6000, treeShadows: false, grassDist: 80, fogDist: 340, lights: 3,
   },
   medium: {
     name: 'Medium', renderScale: 1, maxDpr: 1.5, shadowSize: 2048, shadowRange: 40,
     ao: true, aoSamples: 8, fogSteps: 20, fogScale: 0.25, dof: false, dofSamples: 0,
-    bloomLevels: 5, grass: 22000, treeShadows: true, grassDist: 115, fogDist: 420,
+    bloomLevels: 5, grass: 22000, treeShadows: true, grassDist: 115, fogDist: 420, lights: 4,
   },
   high: {
     name: 'High', renderScale: 1, maxDpr: 2, shadowSize: 2048, shadowRange: 48,
-    ao: true, aoSamples: 12, fogSteps: 32, fogScale: 0.5, dof: true, dofSamples: 24,
-    bloomLevels: 6, grass: 40000, treeShadows: true, grassDist: 150, fogDist: 520,
+    ao: true, aoSamples: 10, fogSteps: 24, fogScale: 0.5, dof: true, dofSamples: 16,
+    bloomLevels: 5, grass: 34000, treeShadows: true, grassDist: 140, fogDist: 520, lights: 5,
   },
   ultra: {
     name: 'Ultra', renderScale: 1, maxDpr: 3, shadowSize: 4096, shadowRange: 56,
     ao: true, aoSamples: 16, fogSteps: 48, fogScale: 0.5, dof: true, dofSamples: 40,
-    bloomLevels: 6, grass: 60000, treeShadows: true, grassDist: 210, fogDist: 640,
+    bloomLevels: 6, grass: 60000, treeShadows: true, grassDist: 210, fogDist: 640, lights: 8,
   },
 };
 

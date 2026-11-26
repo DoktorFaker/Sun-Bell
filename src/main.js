@@ -52,7 +52,7 @@ function dynRes(ms) {
   if (game?.mode !== 'play') return;
   drs.cool -= ms / 1000; drs.upBlock -= ms / 1000;
   drs.acc += ms; drs.n++;
-  if (drs.n < 40) return;
+  if (drs.n < 24) return;
   const avg = drs.acc / drs.n; drs.acc = 0; drs.n = 0;
   if (drs.cool > 0) return;
   let next = drs.scale;
@@ -72,7 +72,7 @@ function applySize() {
   pipeline.configure({ ...quality, renderScale: (resMode === 'auto' ? quality.renderScale : 1) * drs.scale }, Math.round(innerWidth * dpr), Math.round(innerHeight * dpr));
 }
 function applyQuality(name, why) {
-  tier = name; quality = PRESETS[name];
+  tier = name; quality = PRESETS[name]; world.quality = quality;
   world.applyShadowQuality(quality);
   world.setGrass(quality.grass, quality.grassDist);
   applySize();
@@ -85,6 +85,12 @@ addEventListener('resize', applySize);
 // --- UI wiring
 $('#gpuline').textContent = `${detected.gpu} → ${PRESETS[detected.tier].name} preset (${detected.reason})`;
 const startBtn = $('#start');
+// compile every shader up front (including hidden things: rockets, gore, muzzle flashes) so nothing stutters later
+try {
+  const hidden = []; world.scene.traverse((o) => { if (!o.visible && !o.isLight) { hidden.push(o); o.visible = true; } });
+  renderer.compile(world.scene, camera);
+  hidden.forEach((o) => { o.visible = false; });
+} catch (e) { console.warn('shader warm-up', e); }
 startBtn.disabled = false;
 startBtn.textContent = 'Begin';
 if (isTouch) document.body.classList.add('touch');

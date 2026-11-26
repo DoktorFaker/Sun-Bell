@@ -464,7 +464,7 @@ export class Zombie {
     const hit = probeDown(collider, new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z), 4);
     if (hit) this.pos.y = damp(this.pos.y, hit.point.y, 20, dt);
     // far away: cheaper (no shadows, animate at a lower rate)
-    const far = dist > 45;
+    const far = dist > 28;
     if (far !== this._far) { this._far = far; this.object.traverse((m) => { if (m.isMesh) m.castShadow = !far; }); }
     this._animAcc = (this._animAcc || 0) + dt;
     if (dist < 70 || this._animAcc > 0.1) { this.animate(this._animAcc); this._animAcc = 0; }

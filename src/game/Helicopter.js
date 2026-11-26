@@ -128,7 +128,7 @@ export class Helicopter {
     this.fireT = 0;
     this.flashT = 0;
     this.light = new THREE.PointLight(new THREE.Color(1, 0.7, 0.35), 0, 14, 2);
-    this.m.muzzle.add(this.light);
+    this.m.muzzle.add(this.light); this.light.userData.flash = true;
     this.aimPoint = new THREE.Vector3();
     // bullets: pooled tracers
     this.bullets = [];

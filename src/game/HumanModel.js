@@ -347,15 +347,18 @@ export class Cloak {
       }
       this.initialised = true;
     }
-    const steps = 3, h = Math.min(dt, 1 / 30) / steps;
+    const steps = 2, h = Math.min(dt, 1 / 30) / steps;
     const wd = WIND.uWindDir.value;
+    // the gust is the same across a cloak this small: sample it once, and the flutter once per vertex
+    const g0 = gustAt(p[W * 3], p[W * 3 + 2]), tW = WIND.uTime.value * 9;
+    const fl = this._fl || (this._fl = new Float32Array(W * H));
+    for (let j = 1; j < H; j++) for (let i = 0; i < W; i++) fl[j * W + i] = (Math.sin(tW + i * 1.3 + j * 0.9) * 0.6 + 0.6) * g0 * 2.6;
     for (let s = 0; s < steps; s++) {
       // integrate
       for (let j = 1; j < H; j++) for (let i = 0; i < W; i++) {
         const k = (j * W + i) * 3;
-        const g = gustAt(p[k], p[k + 2]);
-        const flutter = Math.sin(WIND.uTime.value * 9 + i * 1.3 + j * 0.9) * 0.6 + 0.6;
-        const fx = wd.x * g * 2.6 * flutter, fz = wd.y * g * 2.6 * flutter, fy = -9.8;
+        const f = fl[j * W + i];
+        const fx = wd.x * f, fz = wd.y * f, fy = -9.8;
         for (let c = 0; c < 3; c++) {
           const v = THREE.MathUtils.clamp((p[k + c] - q[k + c]) * 0.975, -0.12, 0.12);
           q[k + c] = p[k + c];
@@ -377,7 +380,7 @@ export class Cloak {
           const k = (j * W + i) * 3;
           for (const sp of spheres) {
             const ex = p[k] - sp.x, ey = p[k + 1] - sp.y, ez = p[k + 2] - sp.z;
-            const d = Math.hypot(ex, ey, ez);
+            const d = Math.sqrt(ex * ex + ey * ey + ez * ez);
             if (d < sp.r && d > 1e-5) { const f = (sp.r - d) / d; p[k] += ex * f; p[k + 1] += ey * f; p[k + 2] += ez * f; }
           }
         }
@@ -402,7 +405,7 @@ export class Cloak {
   link(a, b, rest) {
     const p = this.p, ka = a * 3, kb = b * 3;
     const dx = p[kb] - p[ka], dy = p[kb + 1] - p[ka + 1], dz = p[kb + 2] - p[ka + 2];
-    const d = Math.hypot(dx, dy, dz) || 1e-6;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
     const diff = (d - rest) / d * 0.5;
     const pinA = a < this.W, pinB = b < this.W;
     const wa = pinA ? 0 : pinB ? 1 : 0.5, wb = pinB ? 0 : pinA ? 1 : 0.5;

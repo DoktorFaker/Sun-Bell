@@ -14,7 +14,7 @@ from skimage.measure import marching_cubes
 
 CFG = {
     'truck': dict(
-        L=6.2, zmin=-2.9, W=2.4, voxel=0.045,
+        L=6.2, zmin=-2.9, W=2.4, voxel=0.06,
         views={  # abs boxes x0,y0,x1,y1 ; front_right = vehicle nose on the right of the drawing
             'left':   dict(box=(334, 71, 1481, 518), front_right=True),
             'right':  dict(box=(1450, 524, 2550, 957), front_right=False),
@@ -31,7 +31,7 @@ CFG = {
         hollow=dict(rect=(1032, 1000, 1418, 1322), floor=1.18),   # the bed: top-view px rect, floor height (m)
     ),
     'ak': dict(
-        L=0.88, zmin=-0.44, W=0.075, voxel=0.0035,
+        L=0.88, zmin=-0.44, W=0.075, voxel=0.005,
         views={
             'left':   dict(box=(68, 222, 1295, 586), front_right=True),
             'right':  dict(box=(1310, 222, 2548, 586), front_right=False),
@@ -43,7 +43,7 @@ CFG = {
         carve=['left', 'front'],
     ),
     'heli': dict(
-        L=10.6, zmin=-7.3, W=2.6, voxel=0.05,
+        L=10.6, zmin=-7.3, W=2.6, voxel=0.065,
         views={
             'left':   dict(box=(18, 32, 1408, 490), front_right=True),
             'right':  dict(box=(1040, 448, 2560, 916), front_right=False),

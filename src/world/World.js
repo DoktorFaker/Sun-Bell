@@ -672,8 +672,34 @@ export class World {
     }
   }
 
+  /**
+   * Only the few point lights that matter right now are switched on (fires, torches, muzzle flashes,
+   * explosions near the camera). The number switched on never changes, so shaders never recompile,
+   * and every pixel pays for a handful of lights instead of all of them.
+   */
+  updateLightPool(dt) {
+    if (!this.camera) return;
+    this._lpT = (this._lpT || 0) - dt;
+    if (!this._lights || this._lpT <= 0) {
+      this._lpT = 0.25;
+      if (!this._lights || (this._lpScan = (this._lpScan || 0) + 1) % 8 === 0) {
+        this._lights = []; this.scene.traverse((o) => { if (o.isPointLight) this._lights.push(o); });
+      }
+      const K = this.quality.lights || 6, cam = this.camera.position, wp = new THREE.Vector3();
+      const scored = this._lights.map((l) => {
+        l.getWorldPosition(wp);
+        const d = wp.distanceTo(cam), r = l.distance || 30;
+        // lights that flash (muzzle, explosion) always keep a slot ready
+        const pri = l.userData.flash ? 1e6 : (l.intensity + 0.5) / (1 + (d / r) * (d / r));
+        return [pri, l];
+      }).sort((a, b) => b[0] - a[0]);
+      scored.forEach(([, l], i) => { l.visible = i < K; });
+    }
+  }
+
   update(dt, t) {
     windTime.value = t;
+    this.updateLightPool(dt);
     // the far ridges follow the camera sideways a little less than they should: a gentle parallax
     if (this.ridges && this.camera) this.ridges.forEach((r, i) => { r.position.x = this.camera.position.x * (0.15 + i * 0.25); r.position.z = this.camera.position.z * (0.15 + i * 0.25); });
     updateWind(t);
