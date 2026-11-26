@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { probeDown, rayHit } from './physics.js';
 import { M } from '../world/materials.js';
 import { TEX, triplanar } from '../world/textures.js';
+import { BLUEPRINT } from './blueprint.js';
 
 const clamp = THREE.MathUtils.clamp;
 const damp = (a, b, k, dt) => THREE.MathUtils.lerp(a, b, 1 - Math.exp(-k * dt));
@@ -19,6 +20,8 @@ function buildModel() {
   const glass = new THREE.MeshStandardMaterial({ color: 0x0f1a20, roughness: 0.05, metalness: 0.9 });
   const lamp = new THREE.MeshStandardMaterial({ color: 0xfff3d0, emissive: 0xfff0c0, emissiveIntensity: 0 });
   const add = (geo, mat, x, y, z, parent = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+  const bp = BLUEPRINT.truck;
+  if (bp) return buildBlueprintModel(g, bp, add, chrome, lamp);
   // chassis (front towards +Z)
   add(new THREE.BoxGeometry(2.1, 0.35, 5.6), dark, 0, 0.75, 0);
   // cab and hood
@@ -41,18 +44,77 @@ function buildModel() {
     add(new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10).rotateZ(Math.PI / 2), chrome, 0, 0, 0, spin);
     wheels.push({ group: w, spin, front: z > 0 });
   }
-  // cargo shown in the bed
+  const { logs, stones } = addCargo(g, add, { floor: 1.08, z0: -2.85, z1: -0.05, x0: -0.9, x1: 0.9 });
+  return { group: g, wheels, logs, stones, lamp, paint, wheelPos: [[-1.05, 2.1], [1.05, 2.1], [-1.05, -1.6], [1.05, -1.6]], wheelR: 0.48 };
+}
+
+/** Logs and stones shown in the bed. */
+function addCargo(g, add, bed) {
   const cargo = new THREE.Group(); g.add(cargo);
   const logs = [], stones = [];
+  const zc = (bed.z0 + bed.z1) / 2, len = Math.min(2.6, bed.z1 - bed.z0 - 0.15);
+  const w = bed.x1 - bed.x0, xc = (bed.x0 + bed.x1) / 2;
   for (let i = 0; i < 12; i++) {
-    const l = add(new THREE.CylinderGeometry(0.13, 0.13, 2.6, 7).rotateX(Math.PI / 2), M.wood, -0.75 + (i % 6) * 0.3, 1.2 + Math.floor(i / 6) * 0.26, -1.45, cargo);
+    const l = add(new THREE.CylinderGeometry(0.13, 0.13, len, 7).rotateX(Math.PI / 2), M.wood, xc - w * 0.42 + (i % 6) * w * 0.168, bed.floor + 0.14 + Math.floor(i / 6) * 0.26, zc, cargo);
     l.visible = false; logs.push(l);
   }
   for (let i = 0; i < 10; i++) {
-    const s = add(new THREE.DodecahedronGeometry(0.22, 0), M.rock, -0.6 + (i % 5) * 0.3, 1.25 + Math.floor(i / 5) * 0.3, -2.4 + (i % 2) * 0.25, cargo);
+    const s = add(new THREE.DodecahedronGeometry(0.22, 0), M.rock, xc - w * 0.34 + (i % 5) * w * 0.17, bed.floor + 0.2 + Math.floor(i / 5) * 0.3, bed.z0 + 0.35 + (i % 2) * 0.25, cargo);
     s.visible = false; stones.push(s);
   }
-  return { group: g, wheels, logs, stones, lamp, paint };
+  return { logs, stones };
+}
+
+/** Remap a cylinder's UVs: side -> atlas rect `side`, caps -> atlas rect `cap`. */
+function wheelUV(geo, rects, side, cap) {
+  const uv = geo.attributes.uv, groups = geo.groups;
+  const map = (r, u, v) => [r[0] + u * r[2], 1 - (r[1] + (1 - v) * r[3])];
+  for (const gr of groups) {
+    const r = gr.materialIndex === 0 ? rects[side] : rects[cap];
+    for (let i = gr.start; i < gr.start + gr.count; i++) {
+      const k = geo.index.getX(i);
+      if (uv._done?.[k]) continue;
+      // tyre side: drawing runs across the tread horizontally, round the tyre vertically
+      const [u, v] = gr.materialIndex === 0 ? map(r, uv.getY(k), uv.getX(k)) : map(r, uv.getX(k), uv.getY(k));
+      uv.setXY(k, u, v);
+      (uv._done ||= {})[k] = true;
+    }
+  }
+  delete uv._done;
+  return geo;
+}
+
+/** The truck exactly as drawn on the user's blueprint sheet. */
+function buildBlueprintModel(g, bp, add, chrome, lamp) {
+  const meta = bp.meta;
+  const paint = new THREE.MeshStandardMaterial({ map: bp.map, roughness: 0.72, metalness: 0.05 });
+  lamp.color.set(0x2a2a26);   // glass when off, glows when driving
+  add(bp.geometry, paint, 0, 0, 0);
+  // headlights sit on the drawn ones (front view: 11% and 89% across, 56% down)
+  const pos = bp.geometry.attributes.position;
+  const ly = meta.H * 0.44;
+  let zf = -1e9;
+  for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getY(i) - ly) < 0.15 && Math.abs(pos.getX(i)) < 0.9) zf = Math.max(zf, pos.getZ(i));
+  for (const s of [-1, 1]) {
+    const l = add(new THREE.CircleGeometry(0.1, 14), lamp, s * meta.W * 0.38, ly, zf + 0.01);
+    l.castShadow = false;
+  }
+  // wheels from the drawing's tyre + rim
+  const wheelMat = new THREE.MeshStandardMaterial({ map: bp.map, roughness: 0.9, metalness: 0.05 });
+  const wheels = [], wheelPos = [];
+  const tx = meta.W / 2 - 0.36;
+  for (const wd of meta.wheels) {
+    for (const s of [-1, 1]) {
+      const w = new THREE.Group(); w.position.set(s * tx, wd.y, wd.z); g.add(w);
+      const spin = new THREE.Group(); w.add(spin);
+      const geo = wheelUV(new THREE.CylinderGeometry(wd.r, wd.r, 0.42, 28, 1), meta.rects, 'tread', 'wheel').rotateZ(Math.PI / 2);
+      add(geo, wheelMat, 0, 0, 0, spin);
+      wheels.push({ group: w, spin, front: wd.z > 0 });
+      wheelPos.push([s * tx, wd.z]);
+    }
+  }
+  const { logs, stones } = addCargo(g, add, meta.bed);
+  return { group: g, wheels, logs, stones, lamp, paint, wheelPos, wheelR: meta.wheels[0].r, tinted: true };
 }
 
 /** A beaten-up truck: repair it, drive it, haul supplies, and flatten anything in the way. */
@@ -74,7 +136,7 @@ export class Truck {
     this.cargo = { wood: 0, stone: 0 };
     this.lastSafe = this.pos.clone();
     this.wheelSpin = 0;
-    this.m.paint.color.set(0x6b4a3a);   // dusty until repaired
+    this.m.paint.color.set(this.m.tinted ? 0x8f8a80 : 0x6b4a3a);   // dusty until repaired
     this.place();
   }
 
@@ -82,7 +144,7 @@ export class Truck {
 
   repair() {
     this.broken = false;
-    this.m.paint.color.set(0x8a3b22);
+    this.m.paint.color.set(this.m.tinted ? 0xffffff : 0x8a3b22);
   }
 
   place() {
@@ -145,7 +207,9 @@ export class Truck {
       const hit = probeDown(collider, new THREE.Vector3(x, this.pos.y + 2.5, z), 8);
       return hit ? hit.point.y : this.pos.y;
     };
-    const fl = wheelH(-1.05, 2.1), fr = wheelH(1.05, 2.1), rl = wheelH(-1.05, -1.6), rr = wheelH(1.05, -1.6);
+    const wp = this.m.wheelPos;
+    const front = wp.filter((p) => p[1] > 0), rear = wp.filter((p) => p[1] <= 0);
+    const fl = wheelH(...front[0]), fr = wheelH(...front[1]), rl = wheelH(...rear[0]), rr = wheelH(...rear[1]);
     const groundY = (fl + fr + rl + rr) / 4;
     if (this.pos.y > groundY + 0.05) { this.vy -= 20 * dt; this.pos.y = Math.max(groundY, this.pos.y + this.vy * dt); }
     else { this.pos.y = damp(this.pos.y, groundY, 25, dt); this.vy = 0; }
@@ -156,7 +220,7 @@ export class Truck {
     this.place();
 
     // wheels & lights
-    this.wheelSpin += this.speed * dt / 0.48;
+    this.wheelSpin += this.speed * dt / this.m.wheelR;
     for (const w of this.m.wheels) {
       w.spin.rotation.x = this.wheelSpin;
       if (w.front) w.group.rotation.y = -this.steer * 0.5;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { probeDown, rayHit } from './physics.js';
 import { heightAt } from '../world/terrain.js';
+import { BLUEPRINT, atlasPart } from './blueprint.js';
 
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
@@ -23,27 +24,38 @@ function buildModel() {
     const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz);
     m.castShadow = true; m.receiveShadow = true; parent.add(m); return m;
   };
+  const bp = BLUEPRINT.heli;
+  if (bp) {
+    // fuselage, cabin, boom, fins and tail rotor straight from the blueprint sheet
+    const skin = new THREE.MeshStandardMaterial({ map: bp.map, roughness: 0.66, metalness: 0.08 });
+    add(bp.geometry, skin, 0, 0, 0);
+  } else {
   // fuselage (nose towards +Z)
-  const body = add(new THREE.SphereGeometry(1.0, 20, 14), paint, 0, 1.7, 0.6);
-  body.scale.set(1.25, 1.1, 2.4);
-  add(new THREE.SphereGeometry(0.98, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), glass, 0, 1.85, 1.7, -0.5).scale.set(1.12, 0.95, 1.3);
-  add(new THREE.BoxGeometry(1.9, 0.12, 2.4), stripe, 0, 1.45, 0.4).scale.set(1.0, 1, 1);
-  // engine housing
-  add(new THREE.BoxGeometry(1.3, 0.6, 1.8), paint, 0, 2.75, -0.2);
-  add(new THREE.CylinderGeometry(0.22, 0.28, 0.5, 10), dark, 0.45, 2.75, -1.2, Math.PI / 2);
-  add(new THREE.CylinderGeometry(0.22, 0.28, 0.5, 10), dark, -0.45, 2.75, -1.2, Math.PI / 2);
-  // tail boom + fins
-  add(new THREE.CylinderGeometry(0.18, 0.45, 5.6, 10), paint, 0, 2.05, -3.9, Math.PI / 2 - 0.06);
-  add(new THREE.BoxGeometry(0.12, 1.5, 0.9), paint, 0, 2.75, -6.5, -0.25);
-  add(new THREE.BoxGeometry(1.8, 0.08, 0.6), paint, 0, 2.15, -6.1);
+    const body = add(new THREE.SphereGeometry(1.0, 20, 14), paint, 0, 1.7, 0.6);
+    body.scale.set(1.25, 1.1, 2.4);
+    add(new THREE.SphereGeometry(0.98, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), glass, 0, 1.85, 1.7, -0.5).scale.set(1.12, 0.95, 1.3);
+    add(new THREE.BoxGeometry(1.9, 0.12, 2.4), stripe, 0, 1.45, 0.4).scale.set(1.0, 1, 1);
+    // engine housing
+    add(new THREE.BoxGeometry(1.3, 0.6, 1.8), paint, 0, 2.75, -0.2);
+    add(new THREE.CylinderGeometry(0.22, 0.28, 0.5, 10), dark, 0.45, 2.75, -1.2, Math.PI / 2);
+    add(new THREE.CylinderGeometry(0.22, 0.28, 0.5, 10), dark, -0.45, 2.75, -1.2, Math.PI / 2);
+    // tail boom + fins
+    add(new THREE.CylinderGeometry(0.18, 0.45, 5.6, 10), paint, 0, 2.05, -3.9, Math.PI / 2 - 0.06);
+    add(new THREE.BoxGeometry(0.12, 1.5, 0.9), paint, 0, 2.75, -6.5, -0.25);
+    add(new THREE.BoxGeometry(1.8, 0.08, 0.6), paint, 0, 2.15, -6.1);
+  }
   // skids
+  const skidMat = bp ? new THREE.MeshStandardMaterial({ color: 0x4a4e3e, roughness: 0.6, metalness: 0.5 }) : steel;
+  const sk = bp ? { x: 1.05, z: 0.74, len: 3.3, a: 1.5, b: -0.48 } : { x: 1.1, z: 0.4, len: 4.2, a: 1.4, b: -0.6 };
   for (const s of [-1, 1]) {
-    add(new THREE.CylinderGeometry(0.06, 0.06, 4.2, 8), steel, s * 1.1, 0.07, 0.4, Math.PI / 2);
-    add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), steel, s * 0.95, 0.55, 1.4, 0, 0, s * 0.35);
-    add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), steel, s * 0.95, 0.55, -0.6, 0, 0, s * 0.35);
+    add(new THREE.CylinderGeometry(0.06, 0.06, sk.len, 8), skidMat, s * sk.x, 0.07, sk.z, Math.PI / 2);
+    const tip = add(new THREE.CylinderGeometry(0.06, 0.06, 0.45, 8), skidMat, s * sk.x, 0.18, sk.z + sk.len / 2 + 0.18, Math.PI / 2 - 0.6);
+    tip.visible = !!bp;
+    add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), skidMat, s * (sk.x - 0.15), 0.55, sk.a, 0, 0, s * 0.35);
+    add(new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), skidMat, s * (sk.x - 0.15), 0.55, sk.b, 0, 0, s * 0.35);
   }
   // nose gun
-  const gun = new THREE.Group(); gun.position.set(0, 1.0, 2.6); g.add(gun);
+  const gun = new THREE.Group(); gun.position.set(0, bp ? 0.78 : 1.0, bp ? 2.85 : 2.6); g.add(gun);
   add(new THREE.SphereGeometry(0.28, 12, 8), dark, 0, 0, 0, 0, 0, 0, gun);
   for (const [x, y] of [[0.07, 0.04], [-0.07, 0.04], [0, -0.07]]) add(new THREE.CylinderGeometry(0.035, 0.035, 1.1, 6), dark, x, y, 0.55, Math.PI / 2, 0, 0, gun);
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 1.15); gun.add(muzzle);
@@ -52,22 +64,33 @@ function buildModel() {
   flash.visible = false; muzzle.add(flash);
   // main rotor
   const mast = add(new THREE.CylinderGeometry(0.1, 0.12, 0.7, 8), dark, 0, 3.3, 0.1);
-  const rotor = new THREE.Group(); rotor.position.set(0, 3.68, 0.1); g.add(rotor);
+  mast.visible = !bp;   // the drawn mast is part of the blueprint mesh
+  const rotor = new THREE.Group(); rotor.position.set(0, bp ? 2.72 : 3.68, bp ? 0.0 : 0.1); g.add(rotor);
   add(new THREE.CylinderGeometry(0.25, 0.25, 0.18, 10), dark, 0, 0, 0, 0, 0, 0, rotor);
-  for (let i = 0; i < 4; i++) {
-    const b = add(new THREE.BoxGeometry(0.32, 0.05, 5.4), dark, 0, 0, 0, 0, i * Math.PI / 2, 0, rotor);
-    b.geometry.translate(0, 0, 2.7);
+  const bladeTex = bp && atlasPart('heli', 'blade');
+  const bladeMat = bladeTex ? new THREE.MeshStandardMaterial({ map: bladeTex, roughness: 0.6, metalness: 0.3, side: THREE.DoubleSide }) : dark;
+  const nBlades = bp ? 2 : 4, bladeLen = bp ? 5.7 : 5.4;
+  for (let i = 0; i < nBlades; i++) {
+    let geo;
+    if (bladeTex) {
+      // flat blade, drawing runs root (left) -> tip (right) along +Z
+      geo = new THREE.PlaneGeometry(0.42, bladeLen).rotateX(-Math.PI / 2);
+      const uv = geo.attributes.uv;
+      for (let k = 0; k < uv.count; k++) { const u = uv.getX(k), v = uv.getY(k); uv.setXY(k, 1 - v, u); }
+    } else geo = new THREE.BoxGeometry(0.32, 0.05, bladeLen);
+    geo.translate(0, 0, bladeLen / 2);
+    add(geo, bladeMat, 0, 0, 0, 0, i * Math.PI * 2 / nBlades, 0, rotor);
   }
   const disc = new THREE.Mesh(new THREE.CircleGeometry(5.6, 40).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0, depthWrite: false }));
-  disc.position.y = 3.7; disc.position.z = 0.1; g.add(disc);
+  disc.position.copy(rotor.position).y += 0.02; g.add(disc);
   // tail rotor
   const tail = new THREE.Group(); tail.position.set(0.12, 2.75, -6.6); g.add(tail);
-  for (let i = 0; i < 2; i++) add(new THREE.BoxGeometry(0.03, 1.3, 0.14), dark, 0, 0, 0, i * Math.PI / 2, 0, 0, tail);
+  if (!bp) for (let i = 0; i < 2; i++) add(new THREE.BoxGeometry(0.03, 1.3, 0.14), dark, 0, 0, 0, i * Math.PI / 2, 0, 0, tail);
   // nav lights
   const red = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 0.3, 0.2) }));
-  red.position.set(-0.9, 2.15, -6.1); g.add(red);
-  const grn = red.clone(); grn.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 8, 0.6) }); grn.position.x = 0.9; g.add(grn);
+  red.position.set(-0.9, 2.15, -6.1); if (bp) red.position.set(-1.25, 1.45, -5.0); g.add(red);
+  const grn = red.clone(); grn.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 8, 0.6) }); grn.position.x = -red.position.x; g.add(grn);
   return { group: g, rotor, tail, disc, gun, muzzle, flash, mast };
 }
 
